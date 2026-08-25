@@ -144,10 +144,11 @@
   };
 
   /* ---- lattice (bounce) diagram: x horizontal, time downward -------------- */
-  function drawLattice(plot, model, t, colors, fmtAmp) {
+  function drawLattice(plot, model, t, colors, fmtAmp, maxPairs) {
     var segs = model.lattice;
     if (!segs.length) return;
-    var tMax = Math.min(segs[segs.length - 1].t1, Math.max(model.tEnd, segs[0].t1 * 4));
+    var pairs = Math.max(1, Math.min(maxPairs || 12, segs.length / 2));
+    var tMax = 2 * pairs * model.T;
     plot.begin(0, model.L, 0, tMax);
     // axes: time increases downward -> invert via sy mapping trick: use ymin=0,ymax=tMax but flip
     var m = plot.margin, ctx = plot.ctx;
@@ -155,14 +156,13 @@
     function py(tt) { return m.t + (tt / tMax) * plot.ph; }
     // grid: one line per transit time T
     ctx.font = '10px system-ui, sans-serif';
-    for (var tt = 0; tt <= tMax + 1e-9; tt += model.T) {
+    var stepT = Math.max(1, Math.ceil((tMax / model.T) / 14));
+    for (var tt = 0; tt <= tMax + 1e-9; tt += stepT * model.T) {
       ctx.strokeStyle = plot.colGrid;
       ctx.beginPath(); ctx.moveTo(m.l, py(tt)); ctx.lineTo(m.l + plot.pw, py(tt)); ctx.stroke();
       var kT = Math.round(tt / model.T);
-      if (kT % 2 === 0 || model.lattice.length <= 12) {
-        ctx.fillStyle = plot.colText; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-        ctx.fillText(kT + 'T', m.l - 4, py(tt));
-      }
+      ctx.fillStyle = plot.colText; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+      ctx.fillText(kT + 'T', m.l - 4, py(tt));
       if (kT > 400) break;
     }
     ctx.strokeStyle = plot.colAxis;
@@ -179,7 +179,7 @@
     ctx.save();
     ctx.beginPath(); ctx.rect(m.l, m.t, plot.pw, plot.ph); ctx.clip();
     var maxAbs = segs[0].abs || 1e-30;
-    for (var k = 0; k < segs.length; k++) {
+    for (var k = 0; k < 2 * pairs && k < segs.length; k++) {
       var s = segs[k];
       if (s.t0 > tMax) break;
       var frac = t <= s.t0 ? 0 : t >= s.t1 ? 1 : (t - s.t0) / (s.t1 - s.t0);
@@ -216,6 +216,52 @@
     ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
     ctx.fillText('position along line →   (time ↓)', m.l + plot.pw / 2, plot.H - 2);
   }
+
+  /* ---- hover crosshair + tooltip: items = [{y, color, label}] ------------- */
+  Plot.prototype.hoverMarker = function (dataX, items, headline) {
+    var ctx = this.ctx, m = this.margin;
+    var px = this.sx(dataX);
+    if (px < m.l || px > m.l + this.pw) return;
+    ctx.strokeStyle = this.colAxis;
+    ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(px, m.t); ctx.lineTo(px, m.t + this.ph); ctx.stroke();
+    ctx.setLineDash([]);
+    for (var k = 0; k < items.length; k++) {
+      var py = this.sy(items[k].y);
+      if (py < m.t || py > m.t + this.ph) continue;
+      ctx.fillStyle = items[k].color;
+      ctx.beginPath(); ctx.arc(px, py, 4, 0, 2 * Math.PI); ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+    }
+    // tooltip box
+    var lines = [headline];
+    for (k = 0; k < items.length; k++) lines.push(items[k].label);
+    ctx.font = '11px system-ui, sans-serif';
+    var w = 0;
+    for (k = 0; k < lines.length; k++) w = Math.max(w, ctx.measureText(lines[k]).width);
+    w += 16;
+    var h = lines.length * 15 + 8;
+    var bx = px + 10, by = m.t + 6;
+    if (bx + w > m.l + this.pw) bx = px - 10 - w;
+    ctx.fillStyle = 'rgba(255,255,255,0.94)';
+    ctx.strokeStyle = this.colAxis; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(bx, by, w, h, 5) : ctx.rect(bx, by, w, h);
+    ctx.fill(); ctx.stroke();
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillStyle = this.colText;
+    ctx.fillText(lines[0], bx + 8, by + 5);
+    for (k = 0; k < items.length; k++) {
+      ctx.fillStyle = items[k].color;
+      ctx.fillText(lines[k + 1], bx + 8, by + 5 + 15 * (k + 1));
+    }
+  };
+  // invert a CSS-pixel x offset into data x, or null if outside the plot area
+  Plot.prototype.dataX = function (pxX) {
+    var m = this.margin;
+    if (pxX < m.l || pxX > m.l + this.pw) return null;
+    return this.xmin + (pxX - m.l) / this.pw * (this.xmax - this.xmin);
+  };
 
   global.TLPlots = { Plot: Plot, drawLattice: drawLattice };
 })(window);

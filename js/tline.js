@@ -241,7 +241,7 @@
     }
 
     // ----- lattice-diagram segments ---------------------------------------
-    var MAX_SEG = 24;
+    var MAX_SEG = 60;
     var lattice = [];
     for (n = 0; n < Math.min(Nb, MAX_SEG); n++) {
       lattice.push({ dir: 'fw', n: n, x0: 0, t0: 2 * n * T, x1: L, t1: (2 * n + 1) * T,

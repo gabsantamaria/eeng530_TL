@@ -141,6 +141,9 @@ table.ro td:last-child { text-align: right; font-variant-numeric: tabular-nums; 
 }
 .plotcard .ptitle .tr { font-weight: 500; color: var(--muted); font-variant-numeric: tabular-nums; }
 canvas { display: block; width: 100%; }
+#cvV, #cvI, #cvHist { cursor: crosshair; }
+.ptitle .inline-ctl { display: flex; align-items: center; gap: 7px; }
+.ptitle .inline-ctl input[type=range] { width: 110px; }
 #cvV { height: 240px; }
 #cvI { height: 200px; }
 #cvLat { height: 300px; }

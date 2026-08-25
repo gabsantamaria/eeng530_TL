@@ -14,7 +14,9 @@
     pulseWidth: 0.25,
     showComponents: false, showEnvelope: true,
     showCurrent: true, showLattice: true, showHistory: true,
+    latticeRT: 10,               // round trips shown on the lattice diagram
   };
+  var hover = { cvV: null, cvI: null, cvHist: null };
   var model = null;
   var t = 0, playing = false, speed = 0.4, lastFrame = null;
   var NX = 480;
@@ -229,14 +231,39 @@
       legend(iPlot, [{ label: 'I(x,t) = (V⁺ − V⁻)/Z0', color: css('--i') }]);
     }
 
+    // ---- hover markers on V and I plots
+    var xu = model.harmonic ? ' λ' : ' L';
+    if (hover.cvV) {
+      var hx = vPlot.dataX(hover.cvV.x);
+      if (hx != null) {
+        var hi = Math.max(0, Math.min(NX - 1, Math.round(hx / model.L * (NX - 1))));
+        var items = [{ y: out.v[hi], color: css('--v'), label: 'V = ' + fmt(out.v[hi], 3) + ' V' }];
+        if (state.showComponents) {
+          items.push({ y: out.vf[hi], color: css('--vfw'), label: 'V⁺ = ' + fmt(out.vf[hi], 3) + ' V' });
+          items.push({ y: out.vb[hi], color: css('--vbw'), label: 'V⁻ = ' + fmt(out.vb[hi], 3) + ' V' });
+        }
+        vPlot.hoverMarker(xs[hi], items, 'x = ' + fmt(xs[hi], 3) + xu);
+      }
+    }
+    if (state.showCurrent && hover.cvI) {
+      var hxi = iPlot.dataX(hover.cvI.x);
+      if (hxi != null) {
+        var hii = Math.max(0, Math.min(NX - 1, Math.round(hxi / model.L * (NX - 1))));
+        iPlot.hoverMarker(xs[hii],
+          [{ y: out.i[hii] * 1e3, color: css('--i'), label: 'I = ' + fmt(out.i[hii] * 1e3, 2) + ' mA' }],
+          'x = ' + fmt(xs[hii], 3) + xu);
+      }
+    }
+
     // ---- lattice diagram
     if (state.showLattice) {
+      $('latRTval').textContent = Math.min(state.latticeRT, model.Nb) + ' round trips';
       P.drawLattice(latPlot, model, t,
         { fw: css('--vfw'), bw: css('--vbw'), now: css('--now') },
         function (s) {
           return model.harmonic ? fmt(s.abs, 2) + '∠' + fmt(s.arg * 180 / Math.PI, 0) + '°'
                                 : (s.re >= 0 ? '+' : '') + fmt(s.re, 3) + ' V';
-        });
+        }, Math.min(state.latticeRT, model.Nb));
     }
 
     // ---- time-history plot
@@ -249,6 +276,16 @@
       histPlot.line(hist.ts, hist.vL, { color: css('--hload'), width: 1.6 });
       histPlot.vline(Math.min(t, model.tEnd), { color: css('--now'), width: 1.4, dash: [4, 3] });
       legend(histPlot, [{ label: 'V(source end, t)', color: css('--hsrc') }, { label: 'V(load, t)', color: css('--hload') }]);
+      if (hover.cvHist) {
+        var ht = histPlot.dataX(hover.cvHist.x);
+        if (ht != null) {
+          var hj = Math.max(0, Math.min(hist.n - 1, Math.round(ht / model.tEnd * (hist.n - 1))));
+          histPlot.hoverMarker(hist.ts[hj],
+            [{ y: hist.v0[hj], color: css('--hsrc'), label: 'source: ' + fmt(hist.v0[hj], 3) + ' V' },
+             { y: hist.vL[hj], color: css('--hload'), label: 'load: ' + fmt(hist.vL[hj], 3) + ' V' }],
+            't = ' + fmt(hist.ts[hj], 2) + (model.harmonic ? ' periods' : ' T'));
+        }
+      }
     }
 
     // ---- time readout + scrub
@@ -410,6 +447,20 @@
         draw();
       });
       document.body.classList.toggle('hide-' + pair[1], !el.checked);
+    });
+
+    // hover tracking on the three curve plots
+    ['cvV', 'cvI', 'cvHist'].forEach(function (id) {
+      var c = $(id);
+      c.addEventListener('mousemove', function (e) { hover[id] = { x: e.offsetX, y: e.offsetY }; });
+      c.addEventListener('mouseleave', function () { hover[id] = null; });
+    });
+
+    // lattice round-trip slider
+    var slRT = $('slLatRT');
+    slRT.value = state.latticeRT;
+    slRT.addEventListener('input', function () {
+      state.latticeRT = parseInt(slRT.value, 10) || 1;
     });
 
     window.addEventListener('resize', function () { if (model) draw(); });
