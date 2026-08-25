@@ -106,7 +106,7 @@
     <div class="card">
       <h2>Animation</h2>
       <div class="btnrow">
-        <button id="btnPlay" class="primary">❚❚ Pause</button>
+        <button id="btnPlay" class="primary">▶ Play</button>
         <button id="btnRestart">↺ Restart</button>
         <button id="btnSteady">⇥ Steady state</button>
       </div>
@@ -171,12 +171,10 @@
         <line x1="555" y1="24" x2="610" y2="24" class="wire"></line>
         <rect x="610" y="14" width="24" height="82" class="comp"></rect>
         <text id="schZL" x="660" y="59" text-anchor="start">ZL</text>
-        <line x1="622" y1="96" x2="622" y2="96" class="wire"></line>
         <!-- ground return -->
         <line x1="40" y1="71" x2="40" y2="86" class="wire"></line>
         <line x1="40" y1="86" x2="205" y2="86" class="wire"></line>
-        <line x1="555" y1="86" x2="622" y2="86" class="wire"></line>
-        <line x1="622" y1="86" x2="622" y2="96" class="wire"></line>
+        <line x1="555" y1="86" x2="610" y2="86" class="wire"></line>
       </svg>
     </div>
 
@@ -220,7 +218,9 @@
     <footer class="foot">
       EENG530 · Colorado School of Mines — bounce-series engine ported from the course MATLAB scripts
       (<code>tline_step_response.m</code>, <code>tline_sinusoidal_transient.m</code>) and verified against the analytic steady state.
-      <a href="https://github.com/gabsantamaria/eeng530_TL">Source on GitHub</a>
+      <a href="https://github.com/gabsantamaria/eeng530_TL">Source on GitHub</a><br>
+      This site was developed with Claude (Anthropic's AI assistant) under the instructor's direction;
+      the wave engine was validated numerically against the course MATLAB scripts and the closed-form steady-state solution.
     </footer>
 
   </main>

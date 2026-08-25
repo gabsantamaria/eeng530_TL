@@ -16,7 +16,7 @@
     showCurrent: true, showLattice: true, showHistory: true,
   };
   var model = null;
-  var t = 0, playing = true, speed = 0.4, lastFrame = null;
+  var t = 0, playing = false, speed = 0.4, lastFrame = null;
   var NX = 480;
   var xs, out, vLim = 1, iLim = 1;                 // iLim in mA
   var hist = { ts: null, v0: null, vL: null, n: 900 };
@@ -117,7 +117,7 @@
       hist.ts[j] = tj; hist.v0[j] = o3.v[0]; hist.vL[j] = o3.v[1];
     }
 
-    if (!keepT) { t = 0; setPlaying(true); }
+    if (!keepT) { t = 0; setPlaying(false); }
     if (t > model.tEnd && !model.harmonic) t = model.tEnd;
     updateReadouts();
     updateSchematic();
