@@ -1,0 +1,190 @@
+/* style.css — EENG530 transmission-line visualizer */
+:root {
+  --bg: #f4f6f9;
+  --panel: #ffffff;
+  --ink: #1d2530;
+  --muted: #5b6472;
+  --line: #d9dee7;
+  --grid: #e8ebf1;
+  --axis: #98a1b0;
+  --accent: #14508c;
+  --v: #1a63c4;
+  --i: #d9482b;
+  --vfw: #0e8a7d;
+  --vbw: #8447c9;
+  --env: #7d90b5;
+  --now: #c98a06;
+  --hsrc: #708196;
+  --hload: #1a63c4;
+  --warnbg: #fff5df;
+  --warnln: #e3c06b;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+header.top {
+  background: linear-gradient(120deg, #10395f, #14508c 55%, #1c6aa8);
+  color: #fff;
+  padding: 14px 22px 12px;
+}
+header.top h1 { margin: 0; font-size: 19px; font-weight: 650; letter-spacing: .2px; }
+header.top .sub { margin-top: 2px; font-size: 12.5px; opacity: .85; }
+
+.layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 14px;
+  padding: 14px;
+  max-width: 1500px;
+  margin: 0 auto;
+}
+@media (max-width: 980px) { .layout { grid-template-columns: 1fr; } }
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  box-shadow: 0 1px 2px rgba(20, 30, 50, .05);
+}
+.card h2 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted);
+}
+
+.sidebar { display: flex; flex-direction: column; gap: 12px; align-self: start; position: sticky; top: 12px; }
+.main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+/* ---- controls ---- */
+select, input[type=number] {
+  font: inherit;
+  color: var(--ink);
+  background: #fbfcfe;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 7px;
+}
+select { width: 100%; }
+input[type=number] { width: 76px; }
+input[type=number]:disabled { opacity: .45; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+
+.mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; }
+.mode-grid label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+
+.row { display: flex; align-items: center; gap: 8px; margin: 5px 0; flex-wrap: wrap; }
+.row label.f { min-width: 88px; color: var(--muted); font-size: 13px; }
+.unit { color: var(--muted); font-size: 12.5px; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.chips button {
+  font: 12px system-ui, sans-serif;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #f2f5fa;
+  color: var(--ink);
+  cursor: pointer;
+}
+.chips button:hover { background: #e3ecf8; border-color: #b9c8de; }
+
+.btnrow { display: flex; gap: 7px; flex-wrap: wrap; }
+.btnrow button {
+  font: 600 13px system-ui, sans-serif;
+  padding: 6px 12px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: #f2f5fa;
+  color: var(--ink);
+  cursor: pointer;
+}
+.btnrow button:hover { background: #e3ecf8; }
+.btnrow button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btnrow button.primary:hover { background: #1a5fa5; }
+
+.toggles label { display: flex; gap: 7px; align-items: center; margin: 3px 0; cursor: pointer; font-size: 13px; }
+
+/* ---- readouts ---- */
+table.ro { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.ro td { padding: 2.5px 0; vertical-align: top; }
+table.ro td:first-child { color: var(--muted); padding-right: 8px; white-space: nowrap; }
+table.ro td:last-child { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+#warnings .warn {
+  background: var(--warnbg);
+  border: 1px solid var(--warnln);
+  border-radius: 7px;
+  padding: 6px 9px;
+  font-size: 12.5px;
+  margin-top: 6px;
+}
+
+/* ---- plots ---- */
+.plotcard { padding: 8px 10px 6px; }
+.plotcard .ptitle {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 13px; font-weight: 650; color: var(--ink);
+  padding: 2px 4px 4px;
+}
+.plotcard .ptitle .tr { font-weight: 500; color: var(--muted); font-variant-numeric: tabular-nums; }
+canvas { display: block; width: 100%; }
+#cvV { height: 240px; }
+#cvI { height: 200px; }
+#cvLat { height: 300px; }
+#cvHist { height: 220px; }
+
+.duo { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 1150px) { .duo { grid-template-columns: 1fr; } }
+
+body.hide-showCurrent #cardI { display: none; }
+body.hide-showLattice #cardLat { display: none; }
+body.hide-showHistory #cardHist { display: none; }
+body[data-mode="step"] .only-harmonic,
+body[data-mode="rect"] .only-harmonic,
+body[data-mode="gauss"] .only-harmonic { display: none; }
+body[data-mode="harmonic"] .only-pulse { display: none; }
+body[data-mode="harmonic"] .only-rectgauss,
+body[data-mode="step"] .only-rectgauss { display: none; }
+
+/* ---- schematic ---- */
+#schematic svg { width: 100%; max-width: 760px; display: block; margin: 0 auto; }
+#schematic text { font: 12px system-ui, sans-serif; fill: var(--ink); }
+#schematic text.dim { fill: var(--muted); font-size: 11px; }
+#schematic .wire { stroke: var(--ink); stroke-width: 1.6; fill: none; }
+#schematic .comp { stroke: var(--ink); stroke-width: 1.6; fill: #eef2f8; }
+#schematic .tl { stroke: var(--accent); stroke-width: 4; fill: none; }
+
+/* ---- theory ---- */
+details.theory { font-size: 13.5px; }
+details.theory summary { cursor: pointer; font-weight: 650; color: var(--accent); }
+details.theory .eq {
+  background: #f4f7fb;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 8px 12px;
+  margin: 8px 0;
+  font-family: "STIX Two Math", "Cambria Math", Georgia, serif;
+  font-size: 15px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+details.theory p { margin: 7px 0; }
+details.theory .note { color: var(--muted); font-size: 12.5px; }
+
+footer.foot {
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 8px 0 20px;
+}
+footer.foot a { color: var(--accent); }

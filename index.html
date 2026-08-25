@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transmission-Line Wave Visualizer — EENG530</title>
+<meta name="description" content="Interactive animation of voltage and current wave propagation, reflection, and standing waves on a lossless transmission line. EENG530 Passive RF &amp; Microwave Devices.">
+<link rel="stylesheet" href="css/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>〰️</text></svg>">
+</head>
+<body data-mode="harmonic">
+
+<header class="top">
+  <h1>Transmission-Line Wave Visualizer</h1>
+  <div class="sub">EENG530 · Passive RF &amp; Microwave Devices — bounce-diagram animation of V(x,t) and I(x,t) on a lossless line</div>
+</header>
+
+<div class="layout">
+
+  <!-- ==================== SIDEBAR ==================== -->
+  <aside class="sidebar">
+
+    <div class="card">
+      <h2>Scenario</h2>
+      <select id="scenario"></select>
+    </div>
+
+    <div class="card">
+      <h2>Excitation</h2>
+      <div class="mode-grid">
+        <label><input type="radio" name="mode" value="harmonic" checked> Time-harmonic</label>
+        <label><input type="radio" name="mode" value="step"> Step</label>
+        <label><input type="radio" name="mode" value="rect"> Rect pulse</label>
+        <label><input type="radio" name="mode" value="gauss"> Gaussian pulse</label>
+      </div>
+      <div class="row only-rectgauss" style="margin-top:8px">
+        <label class="f">Width w</label>
+        <input type="range" id="slWidth" min="0.02" max="2" step="0.01" style="flex:1">
+        <input type="number" id="inWidth" step="0.05" min="0.02" max="2">
+        <span class="unit">× T</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Line</h2>
+      <div class="row only-harmonic">
+        <label class="f">Length ℓ</label>
+        <input type="range" id="slLen" min="0.05" max="3" step="0.05" style="flex:1">
+        <input type="number" id="inLen" step="0.05" min="0.05" max="3">
+        <span class="unit">λ</span>
+      </div>
+      <div class="row">
+        <label class="f">Z₀</label>
+        <input type="number" id="inZ0" step="5" min="1">
+        <span class="unit">Ω (real, lossless)</span>
+      </div>
+      <div class="row only-pulse"><span class="unit">Pulse modes: time is measured in one-way transit times T = ℓ/v, position as x/L.</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Source  (Thévenin)</h2>
+      <div class="row">
+        <label class="f">Rs = Re{Zs}</label>
+        <input type="number" id="inRs" step="5" min="0">
+        <span class="unit">Ω</span>
+      </div>
+      <div class="row only-harmonic">
+        <label class="f">Xs = Im{Zs}</label>
+        <input type="number" id="inXs" step="5">
+        <span class="unit">Ω</span>
+      </div>
+      <div class="row"><span class="unit">V₀ = 1 V ideal source behind Zs.</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Load</h2>
+      <div class="row">
+        <label class="f">RL = Re{ZL}</label>
+        <input type="number" id="inRL" step="5" min="0">
+        <span class="unit">Ω</span>
+      </div>
+      <div class="row only-harmonic">
+        <label class="f">XL = Im{ZL}</label>
+        <input type="number" id="inXL" step="5">
+        <span class="unit">Ω</span>
+      </div>
+      <div class="row">
+        <label style="display:flex;gap:6px;align-items:center;cursor:pointer">
+          <input type="checkbox" id="inOpen"> open circuit (ZL = ∞)
+        </label>
+      </div>
+      <div class="chips" id="loadChips">
+        <button data-r="50"  data-x="0"   data-open="0">matched</button>
+        <button data-r="0"   data-x="0"   data-open="0">short</button>
+        <button data-r="50"  data-x="0"   data-open="1">open</button>
+        <button data-r="100" data-x="0"   data-open="0">2 Z₀</button>
+        <button data-r="25"  data-x="0"   data-open="0">Z₀/2</button>
+        <button class="only-harmonic" data-r="0"  data-x="50"  data-open="0">+j50</button>
+        <button class="only-harmonic" data-r="0"  data-x="-50" data-open="0">−j50</button>
+        <button class="only-harmonic" data-r="50" data-x="50"  data-open="0">50+j50</button>
+      </div>
+      <div class="row only-pulse"><span class="unit">Reactive terminations need the harmonic mode — with resistive ends every reflection is frequency-flat, so pulse shapes stay exact.</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Animation</h2>
+      <div class="btnrow">
+        <button id="btnPlay" class="primary">❚❚ Pause</button>
+        <button id="btnRestart">↺ Restart</button>
+        <button id="btnSteady">⇥ Steady state</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <label class="f">Speed</label>
+        <input type="range" id="slSpeed" min="-1.7" max="0.5" step="0.01" style="flex:1">
+        <span class="unit" id="speedReadout"></span>
+      </div>
+      <div class="row">
+        <label class="f">Time</label>
+        <input type="range" id="scrub" min="0" max="1000" step="1" style="flex:1">
+      </div>
+    </div>
+
+    <div class="card toggles">
+      <h2>Display</h2>
+      <label><input type="checkbox" id="tgComp"> V⁺ / V⁻ wave components</label>
+      <label class="only-harmonic"><input type="checkbox" id="tgEnv"> steady-state envelope ±|V(x)|</label>
+      <label><input type="checkbox" id="tgCur"> current plot</label>
+      <label><input type="checkbox" id="tgLat"> bounce (lattice) diagram</label>
+      <label><input type="checkbox" id="tgHist"> voltage vs time at the ends</label>
+    </div>
+
+    <div class="card">
+      <h2>Derived quantities</h2>
+      <table class="ro">
+        <tr><td>Γ<sub>L</sub> = (Z<sub>L</sub>−Z₀)/(Z<sub>L</sub>+Z₀)</td><td id="roGL"></td></tr>
+        <tr><td>Γ<sub>S</sub> = (Z<sub>s</sub>−Z₀)/(Z<sub>s</sub>+Z₀)</td><td id="roGS"></td></tr>
+        <tr><td>VSWR</td><td id="roVSWR"></td></tr>
+        <tr><td>one-way transit T</td><td id="roT"></td></tr>
+        <tr id="roZinRow"><td>Z<sub>in</sub> (steady state)</td><td id="roZin"></td></tr>
+        <tr id="roVinfRow"><td>V<sub>∞</sub>, I<sub>∞</sub></td><td id="roVinf"></td></tr>
+        <tr><td>bounces summed</td><td id="roNb"></td></tr>
+      </table>
+      <div id="warnings" style="display:none"></div>
+    </div>
+
+  </aside>
+
+  <!-- ==================== MAIN ==================== -->
+  <main class="main">
+
+    <div class="card" id="schematic">
+      <svg viewBox="0 0 760 110" aria-label="circuit schematic">
+        <!-- source -->
+        <circle cx="40" cy="55" r="16" class="comp"></circle>
+        <text x="40" y="59" text-anchor="middle">~</text>
+        <text id="schVs" x="40" y="103" text-anchor="middle" class="dim">V0 cos(2πt)·u(t)</text>
+        <line x1="40" y1="39" x2="40" y2="24" class="wire"></line>
+        <line x1="40" y1="24" x2="90" y2="24" class="wire"></line>
+        <!-- Zs box -->
+        <rect x="90" y="14" width="60" height="20" class="comp"></rect>
+        <text id="schZs" x="120" y="8" text-anchor="middle" class="dim">Zs</text>
+        <line x1="150" y1="24" x2="205" y2="24" class="wire"></line>
+        <!-- line -->
+        <line x1="205" y1="24" x2="555" y2="24" class="tl"></line>
+        <line x1="205" y1="86" x2="555" y2="86" class="tl"></line>
+        <text id="schZ0" x="380" y="60" text-anchor="middle">Z0 = 50 Ω</text>
+        <text x="211" y="16" class="dim">x = 0</text>
+        <text x="548" y="16" text-anchor="end" class="dim">x = ℓ</text>
+        <!-- load -->
+        <line x1="555" y1="24" x2="610" y2="24" class="wire"></line>
+        <rect x="610" y="14" width="24" height="82" class="comp"></rect>
+        <text id="schZL" x="660" y="59" text-anchor="start">ZL</text>
+        <line x1="622" y1="96" x2="622" y2="96" class="wire"></line>
+        <!-- ground return -->
+        <line x1="40" y1="71" x2="40" y2="86" class="wire"></line>
+        <line x1="40" y1="86" x2="205" y2="86" class="wire"></line>
+        <line x1="555" y1="86" x2="622" y2="86" class="wire"></line>
+        <line x1="622" y1="86" x2="622" y2="96" class="wire"></line>
+      </svg>
+    </div>
+
+    <div class="card plotcard">
+      <div class="ptitle"><span>Voltage V(x,t)</span><span class="tr" id="timeReadout"></span></div>
+      <canvas id="cvV"></canvas>
+    </div>
+
+    <div class="card plotcard" id="cardI">
+      <div class="ptitle"><span>Current I(x,t)</span></div>
+      <canvas id="cvI"></canvas>
+    </div>
+
+    <div class="duo">
+      <div class="card plotcard" id="cardLat">
+        <div class="ptitle"><span>Bounce (lattice) diagram</span></div>
+        <canvas id="cvLat"></canvas>
+      </div>
+      <div class="card plotcard" id="cardHist">
+        <div class="ptitle"><span>Voltage at the two ends vs time</span></div>
+        <canvas id="cvHist"></canvas>
+      </div>
+    </div>
+
+    <div class="card">
+      <details class="theory">
+        <summary>Theory — what exactly is being animated?</summary>
+        <p>A lossless line of characteristic impedance Z₀ and one-way transit time T = ℓ/v is driven at x = 0 by a Thévenin source (V₀, Z<sub>s</sub>) switched on at t = 0 and terminated at x = ℓ by Z<sub>L</sub>. Voltage and current are superpositions of a forward and a backward travelling wave:</p>
+        <div class="eq">V(x,t) = V⁺(t − x/v) + V⁻(t + x/v),&nbsp;&nbsp;&nbsp; I(x,t) = [V⁺(t − x/v) − V⁻(t + x/v)] / Z₀</div>
+        <p>Each end reflects with its reflection coefficient, and the initial launch is set by the voltage divider between Z<sub>s</sub> and Z₀ (the line first "looks like" a resistor of value Z₀):</p>
+        <div class="eq">Γ<sub>L</sub> = (Z<sub>L</sub> − Z₀)/(Z<sub>L</sub> + Z₀),&nbsp;&nbsp; Γ<sub>S</sub> = (Z<sub>s</sub> − Z₀)/(Z<sub>s</sub> + Z₀),&nbsp;&nbsp; V⁺₀ = V₀ Z₀/(Z<sub>s</sub> + Z₀)</div>
+        <p>The n-th forward bounce leaves the source at t = 2nT with amplitude V⁺₀(Γ<sub>S</sub>Γ<sub>L</sub>)ⁿ; the n-th backward bounce leaves the load at t = (2n+1)T with amplitude V⁺₀Γ<sub>L</sub>(Γ<sub>S</sub>Γ<sub>L</sub>)ⁿ. The animation sums this (causally gated) series — that is the entire simulation.</p>
+        <p><b>Time-harmonic mode.</b> Each bounce is a phasor; the geometric series sums to the exact steady-state standing wave shown as the dotted envelope:</p>
+        <div class="eq">V(x) = V⁺₀ · [e<sup>−jβx</sup> + Γ<sub>L</sub> e<sup>−jβ(2ℓ−x)</sup>] / [1 − Γ<sub>S</sub>Γ<sub>L</sub> e<sup>−j2βℓ</sup>],&nbsp;&nbsp;&nbsp; Z<sub>in</sub> = Z₀ (1+Γ<sub>L</sub>e<sup>−j2βℓ</sup>)/(1−Γ<sub>L</sub>e<sup>−j2βℓ</sup>)</div>
+        <p><b>Step / pulse modes.</b> With resistive ends the reflections are frequency-flat, so the drawn waveforms are <i>exact</i>; the load voltage builds up as the classic staircase toward V<sub>∞</sub> = V₀R<sub>L</sub>/(R<sub>s</sub>+R<sub>L</sub>).</p>
+        <p class="note"><b>Caveat (reactive terminations, harmonic mode):</b> reflecting each switched-on wavefront by the phasor Γ(jω) is the standard bounce-diagram idealization — a real L or C also produces a decaying natural response at each wavefront arrival (time constant of order |X|/(R+Z₀)·1/ω, a fraction of a period), which is omitted here. The steady-state standing wave the animation settles into is exact regardless.</p>
+        <p class="note">Normalization: harmonic mode uses source period = 1, λ = 1, v = 1 (so T = ℓ/λ periods); pulse modes use T = 1. Amplitudes assume V₀ = 1 V; currents are in mA for Z₀ in Ω.</p>
+      </details>
+    </div>
+
+    <footer class="foot">
+      EENG530 · Colorado School of Mines — bounce-series engine ported from the course MATLAB scripts
+      (<code>tline_step_response.m</code>, <code>tline_sinusoidal_transient.m</code>) and verified against the analytic steady state.
+      <a href="https://github.com/gabsantamaria/eeng530_TL">Source on GitHub</a>
+    </footer>
+
+  </main>
+</div>
+
+<script src="js/tline.js"></script>
+<script src="js/plots.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
