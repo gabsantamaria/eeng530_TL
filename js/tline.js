@@ -78,12 +78,18 @@
     var Nb, convergenceWarning = false, noSteadyState = false;
     if (gmAbs < 1e-9) {
       Nb = 1;
+    } else if (gmAbs >= 1 - 1e-9) {
+      // |GS*GL| >= 1: lossless resonance (or unphysical growth) — never settles
+      noSteadyState = true;
+      convergenceWarning = true;
+      Nb = gmAbs > 1 + 1e-9
+        ? Math.min(NB_MAX, Math.max(1, Math.ceil(Math.log(1e6) / Math.log(gmAbs))))
+        : NB_MAX;
     } else {
       Nb = Math.ceil(Math.log(1e-4) / Math.log(gmAbs));
       if (!isFinite(Nb) || Nb > NB_MAX) {
         Nb = NB_MAX;
         convergenceWarning = Math.pow(gmAbs, NB_MAX) > 0.02;
-        noSteadyState = gmAbs >= 1 - 1e-9;
       }
       if (Nb < 1) Nb = 1;
     }
@@ -154,6 +160,7 @@
     var Vinf = null, Iinf = null;
     if (mode === 'step') {
       if (!isFinite(ZL.re)) { Vinf = V0; Iinf = 0; }
+      else if (Zs.re + ZL.re === 0) { Vinf = 0; Iinf = Infinity; } // ideal source into a short
       else { Vinf = V0 * ZL.re / (Zs.re + ZL.re); Iinf = V0 / (Zs.re + ZL.re); }
     }
 

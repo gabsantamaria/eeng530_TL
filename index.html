@@ -6,7 +6,8 @@
 <title>Transmission-Line Wave Visualizer — EENG530</title>
 <meta name="description" content="Interactive animation of voltage and current wave propagation, reflection, and standing waves on a lossless transmission line. EENG530 Passive RF &amp; Microwave Devices.">
 <link rel="stylesheet" href="css/style.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>〰️</text></svg>">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
+<link rel="apple-touch-icon" href="favicon.png">
 </head>
 <body data-mode="harmonic">
 
@@ -210,8 +211,8 @@
         <p>The n-th forward bounce leaves the source at t = 2nT with amplitude V⁺₀(Γ<sub>S</sub>Γ<sub>L</sub>)ⁿ; the n-th backward bounce leaves the load at t = (2n+1)T with amplitude V⁺₀Γ<sub>L</sub>(Γ<sub>S</sub>Γ<sub>L</sub>)ⁿ. The animation sums this (causally gated) series — that is the entire simulation.</p>
         <p><b>Time-harmonic mode.</b> Each bounce is a phasor; the geometric series sums to the exact steady-state standing wave shown as the dotted envelope:</p>
         <div class="eq">V(x) = V⁺₀ · [e<sup>−jβx</sup> + Γ<sub>L</sub> e<sup>−jβ(2ℓ−x)</sup>] / [1 − Γ<sub>S</sub>Γ<sub>L</sub> e<sup>−j2βℓ</sup>],&nbsp;&nbsp;&nbsp; Z<sub>in</sub> = Z₀ (1+Γ<sub>L</sub>e<sup>−j2βℓ</sup>)/(1−Γ<sub>L</sub>e<sup>−j2βℓ</sup>)</div>
-        <p><b>Step / pulse modes.</b> With resistive ends the reflections are frequency-flat, so the drawn waveforms are <i>exact</i>; the load voltage builds up as the classic staircase toward V<sub>∞</sub> = V₀R<sub>L</sub>/(R<sub>s</sub>+R<sub>L</sub>).</p>
-        <p class="note"><b>Caveat (reactive terminations, harmonic mode):</b> reflecting each switched-on wavefront by the phasor Γ(jω) is the standard bounce-diagram idealization — a real L or C also produces a decaying natural response at each wavefront arrival (time constant of order |X|/(R+Z₀)·1/ω, a fraction of a period), which is omitted here. The steady-state standing wave the animation settles into is exact regardless.</p>
+        <p><b>Step / pulse modes.</b> With resistive ends the reflections are frequency-flat, so the drawn waveforms are <i>exact</i>. Under step drive the load voltage builds up as the classic staircase toward V<sub>∞</sub> = V₀R<sub>L</sub>/(R<sub>s</sub>+R<sub>L</sub>); a rect or Gaussian pulse instead returns as a train of successively scaled echoes decaying to zero.</p>
+        <p class="note"><b>Caveat (reactive terminations, harmonic mode):</b> reflecting each switched-on wavefront by the phasor Γ(jω) is the standard bounce-diagram idealization — a real L or C also produces a decaying natural response at each wavefront arrival (time constant L/(R+Z₀) for an inductive load, (R+Z₀)C for a capacitive one — a fraction of a period when |X| is comparable to Z₀), which is omitted here. The steady-state standing wave the animation settles into is exact regardless.</p>
         <p class="note">Normalization: harmonic mode uses source period = 1, λ = 1, v = 1 (so T = ℓ/λ periods); pulse modes use T = 1. Amplitudes assume V₀ = 1 V; currents are in mA for Z₀ in Ω.</p>
       </details>
     </div>

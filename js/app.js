@@ -36,8 +36,8 @@
     'step-short': { label: 'Step — short load, current doubling', p: { mode: 'step', Rs: 10, Xs: 0, RL: 0, XL: 0, loadOpen: false } },
     'step-msrc': { label: 'Step — matched source (single reflection)', p: { mode: 'step', Rs: 50, Xs: 0, RL: 50, XL: 0, loadOpen: true } },
     'rect-echo': { label: 'Pulse — rectangular, echoes on mismatched line', p: { mode: 'rect', Rs: 25, Xs: 0, RL: 100, XL: 0, loadOpen: false, pulseWidth: 0.25 } },
-    'gauss-open': { label: 'Pulse — Gaussian, open load (reflection flips nothing)', p: { mode: 'gauss', Rs: 50, Xs: 0, RL: 50, XL: 0, loadOpen: true, pulseWidth: 0.2 } },
-    'gauss-short': { label: 'Pulse — Gaussian, short load (inverted echo)', p: { mode: 'gauss', Rs: 50, Xs: 0, RL: 0, XL: 0, loadOpen: false, pulseWidth: 0.2 } },
+    'gauss-open': { label: 'Pulse — Gaussian, open load (V echo upright, I echo inverted)', p: { mode: 'gauss', Rs: 50, Xs: 0, RL: 50, XL: 0, loadOpen: true, pulseWidth: 0.2 } },
+    'gauss-short': { label: 'Pulse — Gaussian, short load (V echo inverted, I echo upright)', p: { mode: 'gauss', Rs: 50, Xs: 0, RL: 0, XL: 0, loadOpen: false, pulseWidth: 0.2 } },
   };
 
   // ---------------- helpers ----------------------------------------------
@@ -103,7 +103,8 @@
         if (model.envI[k] > iMax) iMax = model.envI[k];
       }
     }
-    if (model.Vinf != null) { vMax = Math.max(vMax, Math.abs(model.Vinf)); iMax = Math.max(iMax, Math.abs(model.Iinf) * 1e3); }
+    if (model.Vinf != null && isFinite(model.Vinf)) vMax = Math.max(vMax, Math.abs(model.Vinf));
+    if (model.Iinf != null && isFinite(model.Iinf)) iMax = Math.max(iMax, Math.abs(model.Iinf) * 1e3);
     vLim = vMax * 1.18; iLim = iMax * 1.18;
 
     // history of V at source end and load end
@@ -116,7 +117,7 @@
       hist.ts[j] = tj; hist.v0[j] = o3.v[0]; hist.vL[j] = o3.v[1];
     }
 
-    if (!keepT) { t = 0; playing = true; }
+    if (!keepT) { t = 0; setPlaying(true); }
     if (t > model.tEnd && !model.harmonic) t = model.tEnd;
     updateReadouts();
     updateSchematic();
@@ -138,7 +139,8 @@
     var vinf = $('roVinfRow');
     if (model.Vinf != null) {
       vinf.style.display = '';
-      $('roVinf').textContent = fmt(model.Vinf, 3) + ' V,  ' + fmt(model.Iinf * 1e3, 2) + ' mA';
+      $('roVinf').textContent = fmt(model.Vinf, 3) + ' V,  ' +
+        (isFinite(model.Iinf) ? fmt(model.Iinf * 1e3, 2) + ' mA' : '∞');
     } else vinf.style.display = 'none';
     $('roNb').textContent = model.Nb + (model.Nb >= 300 ? ' (capped)' : '');
   }
@@ -156,7 +158,7 @@
   function updateWarnings() {
     var msgs = [];
     if (model.resonance) msgs.push('Near resonance: |1 − Γ<sub>S</sub>Γ<sub>L</sub>e<sup>−j2βℓ</sup>| ≈ 0 — steady-state amplitude is very large (envelope hidden, lossless line).');
-    if (model.noSteadyState) msgs.push('|Γ<sub>S</sub>Γ<sub>L</sub>| = 1 on a lossless line: the bounce sum never settles. Showing the first ' + model.Nb + ' bounces.');
+    if (model.noSteadyState) msgs.push('|Γ<sub>S</sub>Γ<sub>L</sub>| ≥ 1 on a lossless line: the bounce sum never settles. Showing the first ' + model.Nb + ' bounces.');
     else if (model.convergenceWarning) msgs.push('|Γ<sub>S</sub>Γ<sub>L</sub>| ≈ 1 — convergence is slow; the first ' + model.Nb + ' bounces are shown.');
     var el = $('warnings');
     el.innerHTML = msgs.map(function (m) { return '<div class="warn">⚠ ' + m + '</div>'; }).join('');
@@ -194,7 +196,7 @@
       vPlot.line(xs, model.envV, { color: css('--env'), width: 1.2, dash: [3, 3] });
       vPlot.line(xs, neg, { color: css('--env'), width: 1.2, dash: [3, 3] });
     }
-    if (model.Vinf != null) vPlot.hline(model.Vinf, { color: css('--v'), dash: [6, 4], label: 'V∞ = ' + fmt(model.Vinf, 3) + ' V' });
+    if (model.Vinf != null && isFinite(model.Vinf)) vPlot.hline(model.Vinf, { color: css('--v'), dash: [6, 4], label: 'V∞ = ' + fmt(model.Vinf, 3) + ' V' });
     if (state.showComponents) {
       vPlot.line(xs, out.vf, { color: css('--vfw'), width: 1.5, dash: [6, 3], alpha: 0.9 });
       vPlot.line(xs, out.vb, { color: css('--vbw'), width: 1.5, dash: [6, 3], alpha: 0.9 });
@@ -218,7 +220,7 @@
         iPlot.line(xs, model.envI, { color: css('--env'), width: 1.2, dash: [3, 3] });
         iPlot.line(xs, negI, { color: css('--env'), width: 1.2, dash: [3, 3] });
       }
-      if (model.Iinf != null) iPlot.hline(model.Iinf * 1e3, { color: css('--i'), dash: [6, 4], label: 'I∞ = ' + fmt(model.Iinf * 1e3, 2) + ' mA' });
+      if (model.Iinf != null && isFinite(model.Iinf)) iPlot.hline(model.Iinf * 1e3, { color: css('--i'), dash: [6, 4], label: 'I∞ = ' + fmt(model.Iinf * 1e3, 2) + ' mA' });
       if (state.showComponents) {
         iPlot.line(xs, fMA, { color: css('--vfw'), width: 1.5, dash: [6, 3], alpha: 0.9 });
         iPlot.line(xs, bMA, { color: css('--vbw'), width: 1.5, dash: [6, 3], alpha: 0.9 });
@@ -242,7 +244,7 @@
       var hLim = vLim;
       histPlot.begin(0, model.tEnd, -hLim, hLim);
       histPlot.axes(model.harmonic ? 'time  (periods)' : 'time  (units of T)', 'V at ends  (V)', xTickLabel);
-      if (model.Vinf != null) histPlot.hline(model.Vinf, { color: css('--axis'), dash: [4, 4] });
+      if (model.Vinf != null && isFinite(model.Vinf)) histPlot.hline(model.Vinf, { color: css('--axis'), dash: [4, 4] });
       histPlot.line(hist.ts, hist.v0, { color: css('--hsrc'), width: 1.6 });
       histPlot.line(hist.ts, hist.vL, { color: css('--hload'), width: 1.6 });
       histPlot.vline(Math.min(t, model.tEnd), { color: css('--now'), width: 1.4, dash: [4, 3] });
@@ -284,6 +286,9 @@
     el.addEventListener('change', function () {
       var v = parseFloat(el.value);
       if (!isFinite(v)) { el.value = state[key]; return; }
+      var lo = parseFloat(el.min), hi = parseFloat(el.max);
+      if (isFinite(lo)) v = Math.max(lo, v);
+      if (isFinite(hi)) v = Math.min(hi, v);
       state[key] = v;
       el.value = v;
       $('scenario').value = 'custom';
@@ -317,7 +322,7 @@
     // mode radios
     document.querySelectorAll('input[name=mode]').forEach(function (r) {
       r.addEventListener('change', function () {
-        if (r.checked) { state.mode = r.value; $('scenario').value = 'custom'; rebuild(); }
+        if (r.checked) { state.mode = r.value; $('scenario').value = 'custom'; syncInputs(); rebuild(); }
       });
     });
 
