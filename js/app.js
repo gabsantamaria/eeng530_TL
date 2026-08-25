@@ -293,7 +293,12 @@
       ? 't = ' + fmt(t, 2) + ' periods  =  ' + fmt(t / model.T, 2) + ' T'
       : 't = ' + fmt(t, 2) + ' T';
     $('timeReadout').textContent = tr;
-    if (!scrubbing) $('scrub').value = Math.round(Math.min(t / model.tEnd, 1) * 1000);
+    $('mbTime').textContent = tr;
+    if (!scrubbing) {
+      var sv = Math.round(Math.min(t / model.tEnd, 1) * 1000);
+      $('scrub').value = sv;
+      $('mbScrub').value = sv;
+    }
   }
 
   // ---------------- animation loop ---------------------------------------
@@ -312,6 +317,7 @@
   function setPlaying(p) {
     playing = p;
     $('btnPlay').textContent = p ? '❚❚ Pause' : '▶ Play';
+    $('mbPlay').textContent = p ? '❚❚' : '▶';
   }
 
   // ---------------- UI wiring --------------------------------------------
@@ -449,11 +455,29 @@
       document.body.classList.toggle('hide-' + pair[1], !el.checked);
     });
 
-    // hover tracking on the three curve plots
+    // hover tracking on the three curve plots (mouse + touch)
     ['cvV', 'cvI', 'cvHist'].forEach(function (id) {
       var c = $(id);
       c.addEventListener('mousemove', function (e) { hover[id] = { x: e.offsetX, y: e.offsetY }; });
       c.addEventListener('mouseleave', function () { hover[id] = null; });
+      function onTouch(e) {
+        if (!e.touches.length) return;
+        var r = c.getBoundingClientRect();
+        hover[id] = { x: e.touches[0].clientX - r.left, y: e.touches[0].clientY - r.top };
+      }
+      c.addEventListener('touchstart', onTouch, { passive: true });
+      c.addEventListener('touchmove', onTouch, { passive: true });
+      // marker intentionally persists after touchend so the value stays readable
+    });
+
+    // mobile playbar proxies the main animation controls
+    $('mbPlay').addEventListener('click', function () { $('btnPlay').click(); });
+    $('mbRestart').addEventListener('click', function () { $('btnRestart').click(); });
+    $('mbScrub').addEventListener('input', function () {
+      scrubbing = true;
+      t = parseFloat($('mbScrub').value) / 1000 * model.tEnd;
+      setPlaying(false); draw();
+      scrubbing = false;
     });
 
     // lattice round-trip slider
