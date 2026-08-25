@@ -6,10 +6,10 @@
 
   // ---------------- state ------------------------------------------------
   var state = {
-    mode: 'harmonic',            // 'harmonic' | 'step' | 'rect' | 'gauss'
+    mode: 'step',                // 'harmonic' | 'step' | 'rect' | 'gauss'
     V0: 1, Z0: 50,
-    Rs: 50, Xs: 0,
-    RL: 141.12, XL: -102.55, loadOpen: false,
+    Rs: 1, Xs: 0,
+    RL: 10, XL: 0, loadOpen: false,
     lenLambda: 1.5,
     pulseWidth: 0.25,
     showComponents: false, showEnvelope: true,
@@ -312,7 +312,7 @@
     var oc = document.createElement('option');
     oc.value = 'custom'; oc.textContent = 'Custom…';
     sel.appendChild(oc);
-    sel.value = 'harm-complex';
+    sel.value = 'step-default';
     sel.addEventListener('change', function () {
       if (sel.value === 'custom') return;
       Object.assign(state, SCENARIOS[sel.value].p);
