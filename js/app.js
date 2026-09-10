@@ -22,9 +22,12 @@
       ht: { auto: true, val: 10 },   // history time-axis max (T or periods)
       hv: { auto: true, val: 1 },    // history y half-range (V)
     },
+    histZoom: null,
   };
   var AXIS_INPUT = { v: 'axV', i: 'axI', ht: 'axHT', hv: 'axHV' };
   var hover = { cvV: null, cvI: null, cvHist: null };
+  var histDrag = null;         // {active, x0, y0, x1, y1} in CSS px while rubber-banding
+  // state.histZoom (below) holds a drag-selected view {t0, t1, v0, v1}; null = no zoom
   var model = null;
   var t = 0, playing = false, speed = 0.4, lastFrame = null;
   var NX = 480;
@@ -77,6 +80,8 @@
 
   // ---------------- rebuild on parameter change ---------------------------
   function rebuild(keepT) {
+    state.histZoom = null;      // a zoom window from the previous model is meaningless
+    histDrag = null;
     model = TLb.build({
       mode: state.mode, V0: state.V0, Z0: state.Z0,
       Zs: currentZs(), ZL: currentZL(),
@@ -130,13 +135,15 @@
   // resample the end-voltage history over the DISPLAYED time span, so a manual
   // (zoomed-in) t-axis gets full 900-point resolution instead of a coarse slice
   function computeHist() {
-    var span = state.ax.ht.auto ? model.tEnd : state.ax.ht.val;
-    hist.span = span;
+    var t0 = 0, t1;
+    if (state.histZoom) { t0 = state.histZoom.t0; t1 = state.histZoom.t1; }
+    else t1 = state.ax.ht.auto ? model.tEnd : state.ax.ht.val;
+    hist.t0 = t0; hist.t1 = t1;
     hist.ts = new Float64Array(hist.n); hist.v0 = new Float64Array(hist.n); hist.vL = new Float64Array(hist.n);
     var x2 = new Float64Array([0, model.L]);
     var o3 = { vf: new Float64Array(2), vb: new Float64Array(2), v: new Float64Array(2), i: new Float64Array(2) };
     for (var j = 0; j < hist.n; j++) {
-      var tj = span * j / (hist.n - 1);
+      var tj = t0 + (t1 - t0) * j / (hist.n - 1);
       model.sample(tj, x2, o3);
       hist.ts[j] = tj; hist.v0[j] = o3.v[0]; hist.vL[j] = o3.v[1];
     }
@@ -151,8 +158,11 @@
         a.val = autos[k];
         inp.value = +a.val.toPrecision(3);   // manual values keep the user's exact text
       }
-      inp.disabled = a.auto;
+      var zoomedHist = !!state.histZoom && (k === 'ht' || k === 'hv');
+      inp.disabled = a.auto || zoomedHist;
+      $(AXIS_INPUT[k] + 'auto').disabled = zoomedHist;
     });
+    $('histZoomReset').hidden = !state.histZoom;
   }
 
   // ---------------- readouts / schematic / warnings -----------------------
@@ -209,10 +219,6 @@
     });
   }
 
-  function xTickLabel(x) {
-    return (+x.toFixed(4)).toString();
-  }
-
   function draw() {
     model.sample(t, xs, out);
     var xlabel = model.harmonic ? 'position along the line   x / λ' : 'position along the line   x / L';
@@ -221,7 +227,7 @@
 
     // ---- voltage plot
     vPlot.begin(0, model.L, -vEff, vEff);
-    vPlot.axes(xlabel, 'V(x,t)   (V)', xTickLabel);
+    vPlot.axes(xlabel, 'V(x,t)   (V)');
     if (state.showEnvelope && model.envV && !model.resonance) {
       var neg = new Float64Array(NX);
       for (var k = 0; k < NX; k++) neg[k] = -model.envV[k];
@@ -245,7 +251,7 @@
       var iMA = new Float64Array(NX), fMA = new Float64Array(NX), bMA = new Float64Array(NX);
       for (k = 0; k < NX; k++) { iMA[k] = out.i[k] * 1e3; fMA[k] = out.vf[k] / model.Z0 * 1e3; bMA[k] = -out.vb[k] / model.Z0 * 1e3; }
       iPlot.begin(0, model.L, -iEff, iEff);
-      iPlot.axes(xlabel, 'I(x,t)   (mA)', xTickLabel);
+      iPlot.axes(xlabel, 'I(x,t)   (mA)');
       if (state.showEnvelope && model.envI && !model.resonance) {
         var negI = new Float64Array(NX);
         for (k = 0; k < NX; k++) negI[k] = -model.envI[k];
@@ -298,23 +304,38 @@
 
     // ---- time-history plot
     if (state.showHistory) {
-      var histT = hist.span;
-      var histV = state.ax.hv.auto ? vLim : state.ax.hv.val;
-      histPlot.begin(0, histT, -histV, histV);
-      histPlot.axes(model.harmonic ? 'time  (periods)' : 'time  (units of T)', 'V at ends  (V)', xTickLabel);
+      var hMin, hMax;
+      if (state.histZoom) { hMin = state.histZoom.v0; hMax = state.histZoom.v1; }
+      else { var histV = state.ax.hv.auto ? vLim : state.ax.hv.val; hMin = -histV; hMax = histV; }
+      histPlot.begin(hist.t0, hist.t1, hMin, hMax);
+      histPlot.axes(model.harmonic ? 'time  (periods)' : 'time  (units of T)', 'V at ends  (V)');
       if (model.Vinf != null && isFinite(model.Vinf)) histPlot.hline(model.Vinf, { color: css('--axis'), dash: [4, 4] });
       histPlot.line(hist.ts, hist.v0, { color: css('--hsrc'), width: 1.6 });
       histPlot.line(hist.ts, hist.vL, { color: css('--hload'), width: 1.6 });
       histPlot.vline(Math.min(t, model.tEnd), { color: css('--now'), width: 1.4, dash: [4, 3] });
+      if (histDrag && histDrag.active) {
+        var hc = histPlot.ctx;
+        hc.save();
+        hc.fillStyle = 'rgba(26, 99, 196, 0.12)';
+        hc.strokeStyle = 'rgba(26, 99, 196, 0.8)';
+        hc.lineWidth = 1;
+        hc.fillRect(Math.min(histDrag.x0, histDrag.x1), Math.min(histDrag.y0, histDrag.y1),
+                    Math.abs(histDrag.x1 - histDrag.x0), Math.abs(histDrag.y1 - histDrag.y0));
+        hc.strokeRect(Math.min(histDrag.x0, histDrag.x1), Math.min(histDrag.y0, histDrag.y1),
+                      Math.abs(histDrag.x1 - histDrag.x0), Math.abs(histDrag.y1 - histDrag.y0));
+        hc.restore();
+      }
       legend(histPlot, [{ label: 'V(source end, t)', color: css('--hsrc') }, { label: 'V(load, t)', color: css('--hload') }]);
-      if (hover.cvHist) {
+      if (hover.cvHist && !(histDrag && histDrag.active)) {
         var ht = histPlot.dataX(hover.cvHist.x);
         if (ht != null) {
-          var hj = Math.max(0, Math.min(hist.n - 1, Math.round(ht / hist.span * (hist.n - 1))));
+          var hj = Math.max(0, Math.min(hist.n - 1, Math.round((ht - hist.t0) / (hist.t1 - hist.t0) * (hist.n - 1))));
+          var td = Math.max(2, Math.min(8, 2 - Math.floor(Math.log10((hist.t1 - hist.t0) || 1))));
+          var vd = Math.max(3, Math.min(8, 2 - Math.floor(Math.log10((hMax - hMin) || 1))));
           histPlot.hoverMarker(hist.ts[hj],
-            [{ y: hist.v0[hj], color: css('--hsrc'), label: 'source: ' + fmt(hist.v0[hj], 3) + ' V' },
-             { y: hist.vL[hj], color: css('--hload'), label: 'load: ' + fmt(hist.vL[hj], 3) + ' V' }],
-            't = ' + fmt(hist.ts[hj], 2) + (model.harmonic ? ' periods' : ' T'));
+            [{ y: hist.v0[hj], color: css('--hsrc'), label: 'source: ' + fmt(hist.v0[hj], vd) + ' V' },
+             { y: hist.vL[hj], color: css('--hload'), label: 'load: ' + fmt(hist.vL[hj], vd) + ' V' }],
+            't = ' + fmt(hist.ts[hj], td) + (model.harmonic ? ' periods' : ' T'));
         }
       }
     }
@@ -511,6 +532,50 @@
         if (model && k === 'ht') computeHist();
       });
     });
+
+    // drag-to-zoom on the history plot (mouse only; sets both axes and fixes them)
+    (function () {
+      var c = $('cvHist');
+      function clampPx(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+      c.addEventListener('mousedown', function (e) {
+        if (e.button !== 0) return;
+        histDrag = { active: true, x0: e.offsetX, y0: e.offsetY, x1: e.offsetX, y1: e.offsetY };
+        e.preventDefault();
+      });
+      c.addEventListener('mousemove', function (e) {
+        if (histDrag && histDrag.active) {
+          if ((e.buttons & 1) === 0) { histDrag = null; return; }  // left button no longer held
+          histDrag.x1 = e.offsetX; histDrag.y1 = e.offsetY;
+        }
+      });
+      window.addEventListener('blur', function () { histDrag = null; });
+      window.addEventListener('mouseup', function (e) {
+        if (!histDrag || !histDrag.active) return;
+        if (e.button !== 0) { histDrag = null; return; }           // other buttons cancel
+        var d = histDrag; histDrag = null;
+        if (Math.abs(d.x1 - d.x0) < 8 || Math.abs(d.y1 - d.y0) < 8) return;  // just a click
+        var m = histPlot.margin;
+        var pxa = clampPx(Math.min(d.x0, d.x1), m.l, m.l + histPlot.pw);
+        var pxb = clampPx(Math.max(d.x0, d.x1), m.l, m.l + histPlot.pw);
+        var pya = clampPx(Math.min(d.y0, d.y1), m.t, m.t + histPlot.ph);
+        var pyb = clampPx(Math.max(d.y0, d.y1), m.t, m.t + histPlot.ph);
+        if (pxb - pxa < 4 || pyb - pya < 4) return;
+        state.histZoom = {
+          t0: histPlot.dataX(pxa), t1: histPlot.dataX(pxb),
+          v0: histPlot.dataY(pyb), v1: histPlot.dataY(pya),   // py grows downward
+        };
+        syncAxisInputs();
+        computeHist();
+      });
+      function resetZoom() {
+        if (!state.histZoom) return;
+        state.histZoom = null;
+        syncAxisInputs();
+        computeHist();
+      }
+      c.addEventListener('dblclick', resetZoom);
+      $('histZoomReset').addEventListener('click', resetZoom);
+    })();
 
     // hover tracking on the three curve plots (mouse + touch)
     ['cvV', 'cvI', 'cvHist'].forEach(function (id) {

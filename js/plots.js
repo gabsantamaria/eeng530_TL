@@ -2,6 +2,12 @@
 (function (global) {
   'use strict';
 
+  // decimals appropriate for a given tick step: adjacent ticks always distinct
+  function tickLabel(v, step) {
+    var d = Math.max(0, Math.min(10, 1 - Math.floor(Math.log10(step))));
+    return (+v.toFixed(d)).toString();
+  }
+
   function niceStep(span, target) {
     var raw = span / target;
     var mag = Math.pow(10, Math.floor(Math.log10(raw)));
@@ -66,7 +72,7 @@
       ctx.strokeStyle = this.colGrid;
       ctx.beginPath(); ctx.moveTo(px, m.t); ctx.lineTo(px, m.t + this.ph); ctx.stroke();
       ctx.fillStyle = this.colText;
-      ctx.fillText(xTickFmt ? xTickFmt(x) : (+x.toFixed(6)).toString(), px, m.t + this.ph + 4);
+      ctx.fillText(xTickFmt ? xTickFmt(x, step) : tickLabel(x, step), px, m.t + this.ph + 4);
     }
     // grid + y ticks
     step = niceStep(this.ymax - this.ymin, 5);
@@ -78,7 +84,7 @@
       ctx.strokeStyle = iy === 0 ? this.colAxis : this.colGrid;
       ctx.beginPath(); ctx.moveTo(m.l, py); ctx.lineTo(m.l + this.pw, py); ctx.stroke();
       ctx.fillStyle = this.colText;
-      ctx.fillText((+y.toPrecision(3)).toString(), m.l - 5, py);
+      ctx.fillText(tickLabel(y, step), m.l - 5, py);
     }
     // frame
     ctx.strokeStyle = this.colAxis;
@@ -257,6 +263,12 @@
       ctx.fillStyle = items[k].color;
       ctx.fillText(lines[k + 1], bx + 8, by + 5 + 15 * (k + 1));
     }
+  };
+  // invert a CSS-pixel y offset into data y, or null if outside the plot area
+  Plot.prototype.dataY = function (pyY) {
+    var m = this.margin;
+    if (pyY < m.t || pyY > m.t + this.ph) return null;
+    return this.ymin + (1 - (pyY - m.t) / this.ph) * (this.ymax - this.ymin);
   };
   // invert a CSS-pixel x offset into data x, or null if outside the plot area
   Plot.prototype.dataX = function (pxX) {

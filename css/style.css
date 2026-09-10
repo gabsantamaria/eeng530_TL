@@ -239,3 +239,13 @@ button, .chips button { touch-action: manipulation; }
 @media (max-width: 980px) {
   #mobilebar { display: flex; }   /* must follow the base display:none rule */
 }
+
+.zoomreset {
+  font: 600 11.5px system-ui, sans-serif;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--warnln);
+  background: var(--warnbg);
+  color: var(--ink);
+  cursor: pointer;
+}
