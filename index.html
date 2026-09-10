@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Transmission-Line Wave Visualizer — EENG530</title>
 <meta name="description" content="Interactive animation of voltage and current wave propagation, reflection, and standing waves on a lossless transmission line. EENG530 Passive RF &amp; Microwave Devices.">
-<link rel="stylesheet" href="css/style.css?v=8">
+<link rel="stylesheet" href="css/style.css?v=9">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
 <link rel="apple-touch-icon" href="favicon.png">
 </head>
@@ -129,6 +129,7 @@
       <label><input type="checkbox" id="tgComp"> V⁺ / V⁻ wave components</label>
       <label class="only-harmonic"><input type="checkbox" id="tgEnv"> steady-state envelope ±|V(x)|</label>
       <label><input type="checkbox" id="tgCur"> current plot</label>
+      <label><input type="checkbox" id="tgPow"> power plot</label>
       <label><input type="checkbox" id="tgLat"> bounce (lattice) diagram</label>
       <label><input type="checkbox" id="tgHist"> voltage vs time at the ends</label>
     </div>
@@ -197,6 +198,13 @@
       <canvas id="cvV"></canvas>
     </div>
 
+    <div class="card plotcard" id="cardP">
+      <div class="ptitle"><span>Power P(x,t)</span>
+        <span class="inline-ctl">y ± <input type="number" id="axP" step="1" min="0.001"> mW
+          <label class="autock"><input type="checkbox" id="axPauto" checked> auto</label></span></div>
+      <canvas id="cvP"></canvas>
+    </div>
+
     <div class="card plotcard" id="cardI">
       <div class="ptitle"><span>Current I(x,t)</span>
         <span class="inline-ctl">y ± <input type="number" id="axI" step="1" min="0.01"> mA
@@ -234,6 +242,7 @@
         <div class="eq">V(x) = V⁺₀ · [e<sup>−jβx</sup> + Γ<sub>L</sub> e<sup>−jβ(2ℓ−x)</sup>] / [1 − Γ<sub>S</sub>Γ<sub>L</sub> e<sup>−j2βℓ</sup>],&nbsp;&nbsp;&nbsp; Z<sub>in</sub> = Z₀ (1+Γ<sub>L</sub>e<sup>−j2βℓ</sup>)/(1−Γ<sub>L</sub>e<sup>−j2βℓ</sup>)</div>
         <p><b>Step / pulse modes.</b> With resistive ends the reflections are frequency-flat, so the drawn waveforms are <i>exact</i>. Under step drive the load voltage builds up as the classic staircase toward V<sub>∞</sub> = V₀R<sub>L</sub>/(R<sub>s</sub>+R<sub>L</sub>); a rect or Gaussian pulse instead returns as a train of successively scaled echoes decaying to zero.</p>
         <p class="note"><b>Caveat (reactive terminations, harmonic mode):</b> reflecting each switched-on wavefront by the phasor Γ(jω) is the standard bounce-diagram idealization — a real L or C also produces a decaying natural response at each wavefront arrival (time constant L/(R+Z₀) for an inductive load, (R+Z₀)C for a capacitive one — a fraction of a period when |X| is comparable to Z₀), which is omitted here. The steady-state standing wave the animation settles into is exact regardless.</p>
+        <p><b>Power.</b> The power plot shows the instantaneous flow P(x,t) = V(x,t)·I(x,t) = [ (V⁺)² − (V⁻)² ]/Z₀ (positive toward the load). In harmonic steady state it oscillates at 2ω about the time average ⟨P⟩(x) = ½ Re{V(x) I*(x)}, which on a lossless line is <i>the same at every x</i> — including across junctions — and equals the power delivered to the load.</p>
         <p><b>Cascaded sections.</b> Each junction between Z<sub>0,k</sub> and Z<sub>0,k+1</sub> partially reflects (ρ<sub>k</sub> = (Z<sub>0,k+1</sub>−Z<sub>0,k</sub>)/(Z<sub>0,k+1</sub>+Z<sub>0,k</sub>)) and transmits (1+ρ<sub>k</sub>). With more than one section the app switches from the bounce series to an <i>exact frequency-domain solve</i> — an ABCD chain per frequency, inverse-transformed to time — so nothing is truncated; the only numerical artifact is the band-limiting of ideal sharp edges. The single-line bounce amplitudes and the Z<sub>in</sub> formula above apply to one section; for cascades Z<sub>in</sub> is computed by chaining the section transformations.</p>
         <p class="note">Normalization: harmonic mode uses source period = 1, λ = 1, v = 1 (so T = ℓ/λ periods and all sections share λ); pulse modes use v = 1 with the total transit equal to the summed section lengths. Amplitudes assume V₀ = 1 V; currents are in mA for Z₀ in Ω.</p>
       </details>
@@ -257,9 +266,9 @@
   <span id="mbTime"></span>
 </div>
 
-<script src="js/tline.js?v=8"></script>
-<script src="js/cascade.js?v=8"></script>
-<script src="js/plots.js?v=8"></script>
-<script src="js/app.js?v=8"></script>
+<script src="js/tline.js?v=9"></script>
+<script src="js/cascade.js?v=9"></script>
+<script src="js/plots.js?v=9"></script>
+<script src="js/app.js?v=9"></script>
 </body>
 </html>

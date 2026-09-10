@@ -14,25 +14,26 @@
     sections: [{ Z0: 50, len: 1.5 }],   // sections[0] mirrors Z0/lenLambda; >1 -> cascade engine
     pulseWidth: 0.25,
     showComponents: false, showEnvelope: true,
-    showCurrent: true, showLattice: true, showHistory: true,
+    showCurrent: true, showPower: true, showLattice: true, showHistory: true,
     latticeRT: 10,               // round trips shown on the lattice diagram
     // axis limits: auto -> track the model; manual (auto:false) -> frozen, user-editable
     ax: {
       v:  { auto: true, val: 1 },    // V(x,t) y half-range (V)
       i:  { auto: true, val: 20 },   // I(x,t) y half-range (mA)
+      p:  { auto: true, val: 20 },   // P(x,t) y half-range (mW)
       ht: { auto: true, val: 10 },   // history time-axis max (T or periods)
       hv: { auto: true, val: 1 },    // history y half-range (V)
     },
     histZoom: null,
   };
-  var AXIS_INPUT = { v: 'axV', i: 'axI', ht: 'axHT', hv: 'axHV' };
-  var hover = { cvV: null, cvI: null, cvHist: null };
+  var AXIS_INPUT = { v: 'axV', i: 'axI', p: 'axP', ht: 'axHT', hv: 'axHV' };
+  var hover = { cvV: null, cvI: null, cvP: null, cvHist: null };
   var histDrag = null;         // {active, x0, y0, x1, y1} in CSS px while rubber-banding
   // state.histZoom (below) holds a drag-selected view {t0, t1, v0, v1}; null = no zoom
   var model = null;
   var t = 0, playing = false, speed = 0.4, lastFrame = null;
   var NX = 480;
-  var xs, out, vLim = 1, iLim = 1;                 // iLim in mA
+  var xs, out, vLim = 1, iLim = 1, pLim = 1;       // iLim in mA, pLim in mW
   var hist = { ts: null, v0: null, vL: null, n: 900 };
 
   // ---------------- scenarios -------------------------------------------
@@ -119,15 +120,30 @@
     }
 
     // y-limits: coarse scan of the actual solution
-    var vMax = 1e-9, iMax = 1e-9, o2 = { vf: new Float64Array(NX), vb: new Float64Array(NX), v: new Float64Array(NX), i: new Float64Array(NX) };
+    var vMax = 1e-9, iMax = 1e-9, pMax = 1e-9,
+        o2 = { vf: new Float64Array(NX), vb: new Float64Array(NX), v: new Float64Array(NX), i: new Float64Array(NX) };
     for (var j = 0; j <= 60; j++) {
       model.sample(model.tEnd * j / 60, xs, o2);
       for (k = 0; k < NX; k++) {
         var av = Math.abs(o2.v[k]), ai = Math.abs(o2.i[k]) * 1e3;
+        var ap = Math.abs(o2.v[k] * o2.i[k]) * 1e3;
         if (av > vMax) vMax = av;
         if (ai > iMax) iMax = ai;
+        if (ap > pMax) pMax = ap;
       }
     }
+    // harmonic: steady-state time-average power profile (mW) — flat on a lossless line
+    model.pAvg = null;
+    if (model.harmonic && model.ssV && !model.noSteadyState) {
+      model.pAvg = new Float64Array(NX);
+      for (k = 0; k < NX; k++) {
+        var sv2 = model.ssV(xs[k]), si2 = model.ssI(xs[k]);
+        model.pAvg[k] = 0.5 * (sv2.re * si2.re + sv2.im * si2.im) * 1e3;   // ½·Re{V·I*}
+        if (!model.resonance && Math.abs(model.pAvg[k]) > pMax) pMax = Math.abs(model.pAvg[k]);
+      }
+    }
+    model.Pinf = (model.Vinf != null && isFinite(model.Iinf)) ? model.Vinf * model.Iinf * 1e3 : null;
+    if (model.Pinf != null) pMax = Math.max(pMax, Math.abs(model.Pinf));
     if (model.envV && !model.resonance) {
       for (k = 0; k < NX; k++) {
         if (model.envV[k] > vMax) vMax = model.envV[k];
@@ -136,7 +152,7 @@
     }
     if (model.Vinf != null && isFinite(model.Vinf)) vMax = Math.max(vMax, Math.abs(model.Vinf));
     if (model.Iinf != null && isFinite(model.Iinf)) iMax = Math.max(iMax, Math.abs(model.Iinf) * 1e3);
-    vLim = vMax * 1.18; iLim = iMax * 1.18;
+    vLim = vMax * 1.18; iLim = iMax * 1.18; pLim = pMax * 1.18;
 
     if (!keepT) { t = 0; setPlaying(false); }
     if (t > model.tEnd && !model.harmonic) t = model.tEnd;
@@ -167,7 +183,7 @@
 
   // keep axis inputs mirroring the auto values; manual axes keep their value
   function syncAxisInputs() {
-    var autos = { v: vLim, i: iLim, ht: model.tEnd, hv: vLim };
+    var autos = { v: vLim, i: iLim, p: pLim, ht: model.tEnd, hv: vLim };
     Object.keys(AXIS_INPUT).forEach(function (k) {
       var a = state.ax[k], inp = $(AXIS_INPUT[k]);
       if (a.auto) {
@@ -264,7 +280,7 @@
   }
 
   // ---------------- drawing ----------------------------------------------
-  var vPlot, iPlot, histPlot, latPlot;
+  var vPlot, iPlot, pPlot, histPlot, latPlot;
 
   function drawJunctions(plot) {
     var ctx = plot.ctx;
@@ -367,6 +383,42 @@
         iPlot.hoverMarker(xs[hii],
           [{ y: out.i[hii] * 1e3, color: css('--i'), label: 'I = ' + fmt(out.i[hii] * 1e3, 2) + ' mA' }],
           'x = ' + fmt(xs[hii], 3) + xu);
+      }
+    }
+
+    // ---- power plot
+    if (state.showPower) {
+      var pEff = state.ax.p.auto ? pLim : state.ax.p.val;
+      var pmW = new Float64Array(NX), pfW = new Float64Array(NX), pbW = new Float64Array(NX);
+      for (k = 0; k < NX; k++) {
+        pmW[k] = out.v[k] * out.i[k] * 1e3;
+        pfW[k] = out.vf[k] * out.if[k] * 1e3;    // (V⁺)²/Z₀ — forward power
+        pbW[k] = out.vb[k] * out.ib[k] * 1e3;    // −(V⁻)²/Z₀ — backward power
+      }
+      pPlot.begin(0, model.L, -pEff, pEff);
+      pPlot.axes(xlabel, 'P(x,t)   (mW)');
+      if (model.pAvg && state.showEnvelope && !model.resonance) {
+        pPlot.line(xs, model.pAvg, { color: css('--env'), width: 1.4, dash: [3, 3] });
+      }
+      if (model.Pinf != null) pPlot.hline(model.Pinf, { color: css('--p'), dash: [6, 4], label: 'P∞ = ' + fmt(model.Pinf, 2) + ' mW' });
+      if (state.showComponents) {
+        pPlot.line(xs, pfW, { color: css('--vfw'), width: 1.5, dash: [6, 3], alpha: 0.9 });
+        pPlot.line(xs, pbW, { color: css('--vbw'), width: 1.5, dash: [6, 3], alpha: 0.9 });
+      }
+      pPlot.line(xs, pmW, { color: css('--p'), width: 2.4 });
+      if (model.cascade) drawJunctions(pPlot);
+      var pleg = [{ label: 'P(x,t) = V·I  (→ load)', color: css('--p') }];
+      if (state.showComponents) pleg.push({ label: 'P⁺ = (V⁺)²/Z₀', color: css('--vfw') }, { label: 'P⁻ = −(V⁻)²/Z₀', color: css('--vbw') });
+      if (model.pAvg && state.showEnvelope && !model.resonance) pleg.push({ label: '⟨P⟩ = ½Re{V·I*} steady state', color: css('--env') });
+      legend(pPlot, pleg);
+      if (hover.cvP) {
+        var hxp = pPlot.dataX(hover.cvP.x);
+        if (hxp != null) {
+          var hip = Math.max(0, Math.min(NX - 1, Math.round(hxp / model.L * (NX - 1))));
+          var pitems = [{ y: pmW[hip], color: css('--p'), label: 'P = ' + fmt(pmW[hip], 3) + ' mW' }];
+          if (model.pAvg && state.showEnvelope && !model.resonance) pitems.push({ y: model.pAvg[hip], color: css('--env'), label: '⟨P⟩ = ' + fmt(model.pAvg[hip], 3) + ' mW' });
+          pPlot.hoverMarker(xs[hip], pitems, 'x = ' + fmt(xs[hip], 3) + xu);
+        }
       }
     }
 
@@ -483,6 +535,7 @@
   function init() {
     vPlot = new P.Plot($('cvV'));
     iPlot = new P.Plot($('cvI'));
+    pPlot = new P.Plot($('cvP'));
     histPlot = new P.Plot($('cvHist'), { margin: { l: 46, r: 10, t: 8, b: 30 } });
     latPlot = new P.Plot($('cvLat'), { margin: { l: 34, r: 10, t: 14, b: 26 } });
 
@@ -594,7 +647,7 @@
 
     // display toggles
     [['tgComp', 'showComponents'], ['tgEnv', 'showEnvelope'], ['tgCur', 'showCurrent'],
-     ['tgLat', 'showLattice'], ['tgHist', 'showHistory']].forEach(function (pair) {
+     ['tgPow', 'showPower'], ['tgLat', 'showLattice'], ['tgHist', 'showHistory']].forEach(function (pair) {
       var el = $(pair[0]);
       el.checked = state[pair[1]];
       el.addEventListener('change', function () {
@@ -706,7 +759,7 @@
     })();
 
     // hover tracking on the three curve plots (mouse + touch)
-    ['cvV', 'cvI', 'cvHist'].forEach(function (id) {
+    ['cvV', 'cvI', 'cvP', 'cvHist'].forEach(function (id) {
       var c = $(id);
       c.addEventListener('mousemove', function (e) { hover[id] = { x: e.offsetX, y: e.offsetY }; });
       c.addEventListener('mouseleave', function () { hover[id] = null; });
@@ -798,7 +851,8 @@
         lenLambda: state.lenLambda, pulseWidth: state.pulseWidth,
         sections: state.sections, latticeRT: state.latticeRT,
         showComponents: state.showComponents, showEnvelope: state.showEnvelope,
-        showCurrent: state.showCurrent, showLattice: state.showLattice, showHistory: state.showHistory,
+        showCurrent: state.showCurrent, showPower: state.showPower,
+        showLattice: state.showLattice, showHistory: state.showHistory,
         ax: state.ax, histZoom: state.histZoom,
       })),
       t: t, speed: speed,
@@ -841,7 +895,7 @@
     state.lenLambda = state.sections.length > 1
       ? state.sections[0].len
       : Math.max(0.05, Math.min(3, state.sections[0].len));
-    ['showComponents', 'showEnvelope', 'showCurrent', 'showLattice', 'showHistory'].forEach(function (k) {
+    ['showComponents', 'showEnvelope', 'showCurrent', 'showPower', 'showLattice', 'showHistory'].forEach(function (k) {
       if (typeof s[k] === 'boolean') state[k] = s[k];
     });
     if (s.ax) Object.keys(AXIS_INPUT).forEach(function (k) {
@@ -870,7 +924,7 @@
 
   function syncToggles() {
     [['tgComp', 'showComponents'], ['tgEnv', 'showEnvelope'], ['tgCur', 'showCurrent'],
-     ['tgLat', 'showLattice'], ['tgHist', 'showHistory']].forEach(function (pair) {
+     ['tgPow', 'showPower'], ['tgLat', 'showLattice'], ['tgHist', 'showHistory']].forEach(function (pair) {
       $(pair[0]).checked = state[pair[1]];
       document.body.classList.toggle('hide-' + pair[1], !state[pair[1]]);
     });

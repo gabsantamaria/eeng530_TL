@@ -154,5 +154,22 @@ for (const c of cases) {
   check('cascade causality: quiet ahead of the front', acausal, 0, 5e-4);
 }
 
+// ---------- 6. power: ½Re{V·I*} conservation on lossless lines ------------
+{
+  function pAvg(m, x) { const V = m.ssV(x), I = m.ssI(x); return 0.5 * (V.re * I.re + V.im * I.im); }
+  const m1 = TL.build({ mode: 'harmonic', V0: 1, Z0: 50, Zs: { re: 50, im: 0 }, ZL: { re: 100, im: 25 }, lenLambda: 0.8, phi: 0 });
+  check('power: <P> flat along single line', Math.abs(pAvg(m1, 0.1) - pAvg(m1, 0.73)), 0, 1e-12);
+  // equals the power dissipated in the load: |I(L)|^2 * RL / 2
+  const IL = m1.ssI(0.8);
+  check('power: <P> = load dissipation', pAvg(m1, 0.4), 0.5 * (IL.re * IL.re + IL.im * IL.im) * 100, 1e-12);
+  const m2 = TLC.build({ mode: 'harmonic', V0: 1, Zs: { re: 50, im: 0 }, ZL: { re: 100, im: 0 }, sections: [{ Z0: 50, len: 0.4 }, { Z0: Math.SQRT1_2 * 100, len: 0.25 }] });
+  check('power: <P> continuous across junction', Math.abs(pAvg(m2, 0.2) - pAvg(m2, 0.55)), 0, 1e-9);
+  // instantaneous identity p = V*I = P+ + P- from the component arrays
+  const xs = new Float64Array([0.3, 0.5]);
+  const o = { vf: new Float64Array(2), vb: new Float64Array(2), v: new Float64Array(2), i: new Float64Array(2), if: new Float64Array(2), ib: new Float64Array(2) };
+  m2.sample(3.7, xs, o);
+  check('power: V·I = P⁺ + P⁻ identity', o.v[0] * o.i[0], o.vf[0] * o.if[0] + o.vb[0] * o.ib[0], 1e-12);
+}
+
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
 process.exit(failures === 0 ? 0 : 1);
