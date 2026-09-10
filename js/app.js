@@ -15,7 +15,15 @@
     showComponents: false, showEnvelope: true,
     showCurrent: true, showLattice: true, showHistory: true,
     latticeRT: 10,               // round trips shown on the lattice diagram
+    // axis limits: auto -> track the model; manual (auto:false) -> frozen, user-editable
+    ax: {
+      v:  { auto: true, val: 1 },    // V(x,t) y half-range (V)
+      i:  { auto: true, val: 20 },   // I(x,t) y half-range (mA)
+      ht: { auto: true, val: 10 },   // history time-axis max (T or periods)
+      hv: { auto: true, val: 1 },    // history y half-range (V)
+    },
   };
+  var AXIS_INPUT = { v: 'axV', i: 'axI', ht: 'axHT', hv: 'axHV' };
   var hover = { cvV: null, cvI: null, cvHist: null };
   var model = null;
   var t = 0, playing = false, speed = 0.4, lastFrame = null;
@@ -109,22 +117,42 @@
     if (model.Iinf != null && isFinite(model.Iinf)) iMax = Math.max(iMax, Math.abs(model.Iinf) * 1e3);
     vLim = vMax * 1.18; iLim = iMax * 1.18;
 
-    // history of V at source end and load end
-    hist.ts = new Float64Array(hist.n); hist.v0 = new Float64Array(hist.n); hist.vL = new Float64Array(hist.n);
-    var x2 = new Float64Array([0, model.L]);
-    var o3 = { vf: new Float64Array(2), vb: new Float64Array(2), v: new Float64Array(2), i: new Float64Array(2) };
-    for (j = 0; j < hist.n; j++) {
-      var tj = model.tEnd * j / (hist.n - 1);
-      model.sample(tj, x2, o3);
-      hist.ts[j] = tj; hist.v0[j] = o3.v[0]; hist.vL[j] = o3.v[1];
-    }
-
     if (!keepT) { t = 0; setPlaying(false); }
     if (t > model.tEnd && !model.harmonic) t = model.tEnd;
+    syncAxisInputs();
+    computeHist();
     updateReadouts();
     updateSchematic();
     updateWarnings();
     document.body.setAttribute('data-mode', state.mode);
+  }
+
+  // resample the end-voltage history over the DISPLAYED time span, so a manual
+  // (zoomed-in) t-axis gets full 900-point resolution instead of a coarse slice
+  function computeHist() {
+    var span = state.ax.ht.auto ? model.tEnd : state.ax.ht.val;
+    hist.span = span;
+    hist.ts = new Float64Array(hist.n); hist.v0 = new Float64Array(hist.n); hist.vL = new Float64Array(hist.n);
+    var x2 = new Float64Array([0, model.L]);
+    var o3 = { vf: new Float64Array(2), vb: new Float64Array(2), v: new Float64Array(2), i: new Float64Array(2) };
+    for (var j = 0; j < hist.n; j++) {
+      var tj = span * j / (hist.n - 1);
+      model.sample(tj, x2, o3);
+      hist.ts[j] = tj; hist.v0[j] = o3.v[0]; hist.vL[j] = o3.v[1];
+    }
+  }
+
+  // keep axis inputs mirroring the auto values; manual axes keep their value
+  function syncAxisInputs() {
+    var autos = { v: vLim, i: iLim, ht: model.tEnd, hv: vLim };
+    Object.keys(AXIS_INPUT).forEach(function (k) {
+      var a = state.ax[k], inp = $(AXIS_INPUT[k]);
+      if (a.auto) {
+        a.val = autos[k];
+        inp.value = +a.val.toPrecision(3);   // manual values keep the user's exact text
+      }
+      inp.disabled = a.auto;
+    });
   }
 
   // ---------------- readouts / schematic / warnings -----------------------
@@ -188,9 +216,11 @@
   function draw() {
     model.sample(t, xs, out);
     var xlabel = model.harmonic ? 'position along the line   x / λ' : 'position along the line   x / L';
+    var vEff = state.ax.v.auto ? vLim : state.ax.v.val;
+    var iEff = state.ax.i.auto ? iLim : state.ax.i.val;
 
     // ---- voltage plot
-    vPlot.begin(0, model.L, -vLim, vLim);
+    vPlot.begin(0, model.L, -vEff, vEff);
     vPlot.axes(xlabel, 'V(x,t)   (V)', xTickLabel);
     if (state.showEnvelope && model.envV && !model.resonance) {
       var neg = new Float64Array(NX);
@@ -214,7 +244,7 @@
     if (state.showCurrent) {
       var iMA = new Float64Array(NX), fMA = new Float64Array(NX), bMA = new Float64Array(NX);
       for (k = 0; k < NX; k++) { iMA[k] = out.i[k] * 1e3; fMA[k] = out.vf[k] / model.Z0 * 1e3; bMA[k] = -out.vb[k] / model.Z0 * 1e3; }
-      iPlot.begin(0, model.L, -iLim, iLim);
+      iPlot.begin(0, model.L, -iEff, iEff);
       iPlot.axes(xlabel, 'I(x,t)   (mA)', xTickLabel);
       if (state.showEnvelope && model.envI && !model.resonance) {
         var negI = new Float64Array(NX);
@@ -268,8 +298,9 @@
 
     // ---- time-history plot
     if (state.showHistory) {
-      var hLim = vLim;
-      histPlot.begin(0, model.tEnd, -hLim, hLim);
+      var histT = hist.span;
+      var histV = state.ax.hv.auto ? vLim : state.ax.hv.val;
+      histPlot.begin(0, histT, -histV, histV);
       histPlot.axes(model.harmonic ? 'time  (periods)' : 'time  (units of T)', 'V at ends  (V)', xTickLabel);
       if (model.Vinf != null && isFinite(model.Vinf)) histPlot.hline(model.Vinf, { color: css('--axis'), dash: [4, 4] });
       histPlot.line(hist.ts, hist.v0, { color: css('--hsrc'), width: 1.6 });
@@ -279,7 +310,7 @@
       if (hover.cvHist) {
         var ht = histPlot.dataX(hover.cvHist.x);
         if (ht != null) {
-          var hj = Math.max(0, Math.min(hist.n - 1, Math.round(ht / model.tEnd * (hist.n - 1))));
+          var hj = Math.max(0, Math.min(hist.n - 1, Math.round(ht / hist.span * (hist.n - 1))));
           histPlot.hoverMarker(hist.ts[hj],
             [{ y: hist.v0[hj], color: css('--hsrc'), label: 'source: ' + fmt(hist.v0[hj], 3) + ' V' },
              { y: hist.vL[hj], color: css('--hload'), label: 'load: ' + fmt(hist.vL[hj], 3) + ' V' }],
@@ -453,6 +484,32 @@
         draw();
       });
       document.body.classList.toggle('hide-' + pair[1], !el.checked);
+    });
+
+    // axis auto/manual controls
+    Object.keys(AXIS_INPUT).forEach(function (k) {
+      var inp = $(AXIS_INPUT[k]), ck = $(AXIS_INPUT[k] + 'auto');
+      ck.checked = state.ax[k].auto;
+      inp.disabled = state.ax[k].auto;
+      ck.addEventListener('change', function () {
+        state.ax[k].auto = ck.checked;
+        if (!ck.checked) {
+          // freeze at the displayed precision so the box and the axis agree
+          state.ax[k].val = +state.ax[k].val.toPrecision(3);
+          $(AXIS_INPUT[k]).value = state.ax[k].val;
+        }
+        if (model) { syncAxisInputs(); if (k === 'ht') computeHist(); }
+      });
+      inp.addEventListener('change', function () {
+        var v = parseFloat(inp.value);
+        if (!isFinite(v) || v <= 0) { inp.value = +state.ax[k].val.toPrecision(3); return; }
+        var lo = parseFloat(inp.min), hi = parseFloat(inp.max);
+        if (isFinite(lo)) v = Math.max(lo, v);
+        if (isFinite(hi)) v = Math.min(hi, v);
+        state.ax[k].val = v;
+        inp.value = v;
+        if (model && k === 'ht') computeHist();
+      });
     });
 
     // hover tracking on the three curve plots (mouse + touch)

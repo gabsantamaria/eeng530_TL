@@ -179,12 +179,17 @@
     </div>
 
     <div class="card plotcard">
-      <div class="ptitle"><span>Voltage V(x,t)</span><span class="tr" id="timeReadout"></span></div>
+      <div class="ptitle"><span>Voltage V(x,t)</span>
+        <span class="inline-ctl">y ± <input type="number" id="axV" step="0.1" min="0.01"> V
+          <label class="autock"><input type="checkbox" id="axVauto" checked> auto</label></span>
+        <span class="tr" id="timeReadout"></span></div>
       <canvas id="cvV"></canvas>
     </div>
 
     <div class="card plotcard" id="cardI">
-      <div class="ptitle"><span>Current I(x,t)</span></div>
+      <div class="ptitle"><span>Current I(x,t)</span>
+        <span class="inline-ctl">y ± <input type="number" id="axI" step="1" min="0.01"> mA
+          <label class="autock"><input type="checkbox" id="axIauto" checked> auto</label></span></div>
       <canvas id="cvI"></canvas>
     </div>
 
@@ -196,7 +201,11 @@
         <canvas id="cvLat"></canvas>
       </div>
       <div class="card plotcard" id="cardHist">
-        <div class="ptitle"><span>Voltage at the two ends vs time</span></div>
+        <div class="ptitle"><span>Voltage at the two ends vs time</span>
+          <span class="inline-ctl">t ≤ <input type="number" id="axHT" step="1" min="0.1">
+            <label class="autock"><input type="checkbox" id="axHTauto" checked> auto</label>
+            &nbsp;y ± <input type="number" id="axHV" step="0.1" min="0.01"> V
+            <label class="autock"><input type="checkbox" id="axHVauto" checked> auto</label></span></div>
         <canvas id="cvHist"></canvas>
       </div>
     </div>

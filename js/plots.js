@@ -56,11 +56,12 @@
     var ctx = this.ctx, m = this.margin;
     ctx.font = '11px system-ui, sans-serif';
     ctx.lineWidth = 1;
-    // grid + x ticks
+    // grid + x ticks (integer multiples of the step: no float accumulation)
     var step = niceStep(this.xmax - this.xmin, 8);
-    var x0 = Math.ceil(this.xmin / step) * step, x;
+    var n0 = Math.ceil(this.xmin / step - 1e-9), ix, x;
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    for (x = x0; x <= this.xmax + 1e-9; x += step) {
+    for (ix = n0; ix * step <= this.xmax + step * 1e-9; ix++) {
+      x = ix === 0 ? 0 : ix * step;
       var px = this.sx(x);
       ctx.strokeStyle = this.colGrid;
       ctx.beginPath(); ctx.moveTo(px, m.t); ctx.lineTo(px, m.t + this.ph); ctx.stroke();
@@ -69,11 +70,12 @@
     }
     // grid + y ticks
     step = niceStep(this.ymax - this.ymin, 5);
-    var y0 = Math.ceil(this.ymin / step) * step, y;
+    var m0 = Math.ceil(this.ymin / step - 1e-9), iy, y;
     ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-    for (y = y0; y <= this.ymax + 1e-9; y += step) {
+    for (iy = m0; iy * step <= this.ymax + step * 1e-9; iy++) {
+      y = iy === 0 ? 0 : iy * step;
       var py = this.sy(y);
-      ctx.strokeStyle = (Math.abs(y) < step * 1e-6) ? this.colAxis : this.colGrid;
+      ctx.strokeStyle = iy === 0 ? this.colAxis : this.colGrid;
       ctx.beginPath(); ctx.moveTo(m.l, py); ctx.lineTo(m.l + this.pw, py); ctx.stroke();
       ctx.fillStyle = this.colText;
       ctx.fillText((+y.toPrecision(3)).toString(), m.l - 5, py);
