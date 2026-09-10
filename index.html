@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Transmission-Line Wave Visualizer — EENG530</title>
 <meta name="description" content="Interactive animation of voltage and current wave propagation, reflection, and standing waves on a lossless transmission line. EENG530 Passive RF &amp; Microwave Devices.">
-<link rel="stylesheet" href="css/style.css?v=7">
+<link rel="stylesheet" href="css/style.css?v=8">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
 <link rel="apple-touch-icon" href="favicon.png">
 </head>
@@ -44,18 +44,21 @@
 
     <div class="card">
       <h2>Line</h2>
-      <div class="row only-harmonic">
+      <div class="row only-harmonic single-line-ctl">
         <label class="f">Length ℓ</label>
         <input type="range" id="slLen" min="0.05" max="3" step="0.05" style="flex:1">
         <input type="number" id="inLen" step="0.05" min="0.05" max="3">
         <span class="unit">λ</span>
       </div>
-      <div class="row">
+      <div class="row single-line-ctl">
         <label class="f">Z₀</label>
         <input type="number" id="inZ0" step="5" min="1">
         <span class="unit">Ω (real, lossless)</span>
       </div>
-      <div class="row only-pulse"><span class="unit">Pulse modes: time is measured in one-way transit times T = ℓ/v, position as x/L.</span></div>
+      <div id="secRows"></div>
+      <div class="btnrow" style="margin-top:6px"><button id="btnAddSec">+ add section</button></div>
+      <div class="row cascade-note"><span class="unit">Cascaded sections share the same propagation velocity; junction reflections are computed exactly.</span></div>
+      <div class="row only-pulse"><span class="unit">Pulse modes: v = 1 — a length-1 section has unit transit time; times and section lengths share the same normalized unit.</span></div>
     </div>
 
     <div class="card">
@@ -131,11 +134,21 @@
     </div>
 
     <div class="card">
+      <h2>Project</h2>
+      <div class="btnrow">
+        <button id="btnSave">⬇ Save project</button>
+        <button id="btnLoad">⬆ Load project</button>
+      </div>
+      <input type="file" id="fileLoad" accept=".json,application/json" hidden>
+      <div class="row"><span class="unit">…or drag a saved .json anywhere onto the page. Projects restore every parameter and view setting.</span></div>
+    </div>
+
+    <div class="card">
       <h2>Derived quantities</h2>
       <table class="ro">
-        <tr><td>Γ<sub>L</sub> = (Z<sub>L</sub>−Z₀)/(Z<sub>L</sub>+Z₀)</td><td id="roGL"></td></tr>
-        <tr><td>Γ<sub>S</sub> = (Z<sub>s</sub>−Z₀)/(Z<sub>s</sub>+Z₀)</td><td id="roGS"></td></tr>
-        <tr><td>VSWR</td><td id="roVSWR"></td></tr>
+        <tr><td id="lblGL">Γ<sub>L</sub> = (Z<sub>L</sub>−Z₀)/(Z<sub>L</sub>+Z₀)</td><td id="roGL"></td></tr>
+        <tr><td id="lblGS">Γ<sub>S</sub> = (Z<sub>s</sub>−Z₀)/(Z<sub>s</sub>+Z₀)</td><td id="roGS"></td></tr>
+        <tr><td id="lblVSWR">VSWR</td><td id="roVSWR"></td></tr>
         <tr><td>one-way transit T</td><td id="roT"></td></tr>
         <tr id="roZinRow"><td>Z<sub>in</sub> (steady state)</td><td id="roZin"></td></tr>
         <tr id="roVinfRow"><td>V<sub>∞</sub>, I<sub>∞</sub></td><td id="roVinf"></td></tr>
@@ -161,10 +174,8 @@
         <rect x="90" y="14" width="60" height="20" class="comp"></rect>
         <text id="schZs" x="120" y="8" text-anchor="middle" class="dim">Zs</text>
         <line x1="150" y1="24" x2="205" y2="24" class="wire"></line>
-        <!-- line -->
-        <line x1="205" y1="24" x2="555" y2="24" class="tl"></line>
-        <line x1="205" y1="86" x2="555" y2="86" class="tl"></line>
-        <text id="schZ0" x="380" y="60" text-anchor="middle">Z0 = 50 Ω</text>
+        <!-- line sections (generated) -->
+        <g id="schTL"></g>
         <text x="211" y="16" class="dim">x = 0</text>
         <text x="548" y="16" text-anchor="end" class="dim">x = ℓ</text>
         <!-- load -->
@@ -223,7 +234,8 @@
         <div class="eq">V(x) = V⁺₀ · [e<sup>−jβx</sup> + Γ<sub>L</sub> e<sup>−jβ(2ℓ−x)</sup>] / [1 − Γ<sub>S</sub>Γ<sub>L</sub> e<sup>−j2βℓ</sup>],&nbsp;&nbsp;&nbsp; Z<sub>in</sub> = Z₀ (1+Γ<sub>L</sub>e<sup>−j2βℓ</sup>)/(1−Γ<sub>L</sub>e<sup>−j2βℓ</sup>)</div>
         <p><b>Step / pulse modes.</b> With resistive ends the reflections are frequency-flat, so the drawn waveforms are <i>exact</i>. Under step drive the load voltage builds up as the classic staircase toward V<sub>∞</sub> = V₀R<sub>L</sub>/(R<sub>s</sub>+R<sub>L</sub>); a rect or Gaussian pulse instead returns as a train of successively scaled echoes decaying to zero.</p>
         <p class="note"><b>Caveat (reactive terminations, harmonic mode):</b> reflecting each switched-on wavefront by the phasor Γ(jω) is the standard bounce-diagram idealization — a real L or C also produces a decaying natural response at each wavefront arrival (time constant L/(R+Z₀) for an inductive load, (R+Z₀)C for a capacitive one — a fraction of a period when |X| is comparable to Z₀), which is omitted here. The steady-state standing wave the animation settles into is exact regardless.</p>
-        <p class="note">Normalization: harmonic mode uses source period = 1, λ = 1, v = 1 (so T = ℓ/λ periods); pulse modes use T = 1. Amplitudes assume V₀ = 1 V; currents are in mA for Z₀ in Ω.</p>
+        <p><b>Cascaded sections.</b> Each junction between Z<sub>0,k</sub> and Z<sub>0,k+1</sub> partially reflects (ρ<sub>k</sub> = (Z<sub>0,k+1</sub>−Z<sub>0,k</sub>)/(Z<sub>0,k+1</sub>+Z<sub>0,k</sub>)) and transmits (1+ρ<sub>k</sub>). With more than one section the app switches from the bounce series to an <i>exact frequency-domain solve</i> — an ABCD chain per frequency, inverse-transformed to time — so nothing is truncated; the only numerical artifact is the band-limiting of ideal sharp edges. The single-line bounce amplitudes and the Z<sub>in</sub> formula above apply to one section; for cascades Z<sub>in</sub> is computed by chaining the section transformations.</p>
+        <p class="note">Normalization: harmonic mode uses source period = 1, λ = 1, v = 1 (so T = ℓ/λ periods and all sections share λ); pulse modes use v = 1 with the total transit equal to the summed section lengths. Amplitudes assume V₀ = 1 V; currents are in mA for Z₀ in Ω.</p>
       </details>
     </div>
 
@@ -245,8 +257,9 @@
   <span id="mbTime"></span>
 </div>
 
-<script src="js/tline.js?v=7"></script>
-<script src="js/plots.js?v=7"></script>
-<script src="js/app.js?v=7"></script>
+<script src="js/tline.js?v=8"></script>
+<script src="js/cascade.js?v=8"></script>
+<script src="js/plots.js?v=8"></script>
+<script src="js/app.js?v=8"></script>
 </body>
 </html>

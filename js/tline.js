@@ -240,6 +240,18 @@
       }
     }
 
+    // component currents for display (single-section: constant Z0)
+    var _sampleInner = sample;
+    sample = function (t2, xs2, out2) {
+      _sampleInner(t2, xs2, out2);
+      if (out2.if) {
+        for (var k3 = 0; k3 < xs2.length; k3++) {
+          out2.if[k3] = out2.vf[k3] / Z0;
+          out2.ib[k3] = -out2.vb[k3] / Z0;
+        }
+      }
+    };
+
     // ----- lattice-diagram segments ---------------------------------------
     var MAX_SEG = 60;
     var lattice = [];

@@ -249,3 +249,20 @@ button, .chips button { touch-action: manipulation; }
   color: var(--ink);
   cursor: pointer;
 }
+
+/* ---- cascade section editor ---- */
+body.cascade .single-line-ctl { display: none; }
+body:not(.cascade) .cascade-note { display: none; }
+.secrow { gap: 5px; font-size: 13px; }
+.secrow .secno {
+  min-width: 18px; height: 18px;
+  border-radius: 50%;
+  background: var(--accent); color: #fff;
+  font: 700 11px/18px system-ui, sans-serif;
+  text-align: center;
+}
+.secrow input[type=number] { width: 64px; padding: 4px 6px; }
+.secrow .sX {
+  border: 1px solid var(--line); background: #f6e8e8;
+  border-radius: 6px; cursor: pointer; padding: 2px 8px;
+}

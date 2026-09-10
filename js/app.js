@@ -11,6 +11,7 @@
     Rs: 1, Xs: 0,
     RL: 10, XL: 0, loadOpen: false,
     lenLambda: 1.5,
+    sections: [{ Z0: 50, len: 1.5 }],   // sections[0] mirrors Z0/lenLambda; >1 -> cascade engine
     pulseWidth: 0.25,
     showComponents: false, showEnvelope: true,
     showCurrent: true, showLattice: true, showHistory: true,
@@ -82,14 +83,29 @@
   function rebuild(keepT) {
     state.histZoom = null;      // a zoom window from the previous model is meaningless
     histDrag = null;
-    model = TLb.build({
-      mode: state.mode, V0: state.V0, Z0: state.Z0,
-      Zs: currentZs(), ZL: currentZL(),
-      lenLambda: state.lenLambda, pulseWidth: state.pulseWidth, phi: 0,
-    });
+    if (state.sections.length === 1) {
+      state.sections[0].Z0 = state.Z0;
+      state.sections[0].len = state.lenLambda;
+    }
+    if (state.sections.length > 1) {
+      model = window.TLCascade.build({
+        mode: state.mode, V0: state.V0,
+        Zs: currentZs(), ZL: currentZL(),
+        sections: state.sections.map(function (s) { return { Z0: s.Z0, len: s.len }; }),
+        pulseWidth: state.pulseWidth,
+      });
+    } else {
+      model = TLb.build({
+        mode: state.mode, V0: state.V0, Z0: state.Z0,
+        Zs: currentZs(), ZL: currentZL(),
+        lenLambda: state.lenLambda, pulseWidth: state.pulseWidth, phi: 0,
+      });
+    }
+    document.body.classList.toggle('cascade', state.sections.length > 1);
     xs = new Float64Array(NX);
     for (var k = 0; k < NX; k++) xs[k] = model.L * k / (NX - 1);
-    out = { vf: new Float64Array(NX), vb: new Float64Array(NX), v: new Float64Array(NX), i: new Float64Array(NX) };
+    out = { vf: new Float64Array(NX), vb: new Float64Array(NX), v: new Float64Array(NX), i: new Float64Array(NX),
+            if: new Float64Array(NX), ib: new Float64Array(NX) };
 
     // envelope
     model.envV = null; model.envI = null;
@@ -156,21 +172,29 @@
       var a = state.ax[k], inp = $(AXIS_INPUT[k]);
       if (a.auto) {
         a.val = autos[k];
-        inp.value = +a.val.toPrecision(3);   // manual values keep the user's exact text
+        inp.value = +a.val.toPrecision(3);
+      } else if (Math.abs(parseFloat(inp.value) - a.val) > 1e-12) {
+        inp.value = +a.val.toPrecision(6);   // resync display only when it truly differs (project load)
       }
+      var ck = $(AXIS_INPUT[k] + 'auto');
+      ck.checked = a.auto;
       var zoomedHist = !!state.histZoom && (k === 'ht' || k === 'hv');
       inp.disabled = a.auto || zoomedHist;
-      $(AXIS_INPUT[k] + 'auto').disabled = zoomedHist;
+      ck.disabled = zoomedHist;
     });
     $('histZoomReset').hidden = !state.histZoom;
   }
 
   // ---------------- readouts / schematic / warnings -----------------------
   function updateReadouts() {
+    $('lblGL').innerHTML = model.cascade ? 'Γ<sub>L</sub> (w.r.t. last-section Z₀)' : 'Γ<sub>L</sub> = (Z<sub>L</sub>−Z₀)/(Z<sub>L</sub>+Z₀)';
+    $('lblGS').innerHTML = model.cascade ? 'Γ<sub>S</sub> (w.r.t. first-section Z₀)' : 'Γ<sub>S</sub> = (Z<sub>s</sub>−Z₀)/(Z<sub>s</sub>+Z₀)';
+    $('lblVSWR').textContent = model.cascade ? 'VSWR (load-end section)' : 'VSWR';
     $('roGL').textContent = fmtMagAng(model.GL);
     $('roGS').textContent = fmtMagAng(model.GS);
     $('roVSWR').textContent = isFinite(model.VSWR) ? fmt(model.VSWR, 2) : '∞';
-    $('roT').textContent = model.harmonic ? fmt(model.T, 3) + ' periods' : 'T (normalized)';
+    $('roT').textContent = model.harmonic ? fmt(model.T, 3) + ' periods'
+      : model.cascade ? fmt(model.T, 3) + ' (norm. units)' : 'T (normalized)';
     var zin = $('roZinRow');
     if (model.harmonic && model.Zin) {
       zin.style.display = '';
@@ -182,14 +206,46 @@
       $('roVinf').textContent = fmt(model.Vinf, 3) + ' V,  ' +
         (isFinite(model.Iinf) ? fmt(model.Iinf * 1e3, 2) + ' mA' : '∞');
     } else vinf.style.display = 'none';
-    $('roNb').textContent = model.Nb + (model.Nb >= 300 ? ' (capped)' : '');
+    $('roNb').textContent = model.Nb == null ? 'exact (no truncation)' : model.Nb + (model.Nb >= 300 ? ' (capped)' : '');
   }
 
   function updateSchematic() {
     $('schZs').textContent = 'Zs = ' + fmtC(currentZs()) + ' Ω';
     $('schZL').textContent = 'ZL = ' + (state.loadOpen ? 'open' : fmtC(currentZL()) + ' Ω');
-    $('schZ0').textContent = 'Z0 = ' + fmt(state.Z0, 1) + ' Ω,  ' +
-      (model.harmonic ? 'ℓ = ' + fmt(state.lenLambda, 3) + ' λ' : 'delay T');
+    // rebuild the line segment drawing (one span per section)
+    var g = $('schTL'), NSVG = 'http://www.w3.org/2000/svg';
+    while (g.firstChild) g.removeChild(g.firstChild);
+    var X0 = 205, X1 = 555, total = 0;
+    state.sections.forEach(function (s) { total += s.len; });
+    var xpx = X0, unit = model.harmonic ? ' λ' : ' T';
+    var single = state.sections.length === 1;
+    state.sections.forEach(function (s, idx) {
+      var wpx = (X1 - X0) * s.len / total;
+      ['24', '86'].forEach(function (yy) {
+        var ln = document.createElementNS(NSVG, 'line');
+        ln.setAttribute('x1', xpx + (idx ? 2 : 0)); ln.setAttribute('x2', xpx + wpx);
+        ln.setAttribute('y1', yy); ln.setAttribute('y2', yy);
+        ln.setAttribute('class', 'tl');
+        ln.setAttribute('stroke-width', idx % 2 ? 5.5 : 4);
+        g.appendChild(ln);
+      });
+      var tx = document.createElementNS(NSVG, 'text');
+      tx.setAttribute('x', xpx + wpx / 2); tx.setAttribute('y', 60);
+      tx.setAttribute('text-anchor', 'middle');
+      tx.textContent = single
+        ? 'Z0 = ' + fmt(s.Z0, 1) + ' Ω' + (model.harmonic ? ',  ℓ = ' + fmt(s.len, 3) + unit : ',  delay T')
+        : fmt(s.Z0, 0) + ' Ω · ' + fmt(s.len, 2) + unit;
+      g.appendChild(tx);
+      if (idx > 0) {
+        var jn = document.createElementNS(NSVG, 'line');
+        jn.setAttribute('x1', xpx); jn.setAttribute('x2', xpx);
+        jn.setAttribute('y1', 24); jn.setAttribute('y2', 86);
+        jn.setAttribute('class', 'wire');
+        jn.setAttribute('stroke-dasharray', '3 3');
+        g.appendChild(jn);
+      }
+      xpx += wpx;
+    });
     $('schVs').textContent = state.mode === 'harmonic' ? 'V0 cos(2πt)·u(t)'
       : state.mode === 'step' ? 'V0 · u(t)'
       : state.mode === 'rect' ? 'V0 · rect pulse' : 'V0 · Gaussian pulse';
@@ -198,7 +254,9 @@
   function updateWarnings() {
     var msgs = [];
     if (model.resonance) msgs.push('Near resonance: |1 − Γ<sub>S</sub>Γ<sub>L</sub>e<sup>−j2βℓ</sup>| ≈ 0 — steady-state amplitude is very large (envelope hidden, lossless line).');
-    if (model.noSteadyState) msgs.push('|Γ<sub>S</sub>Γ<sub>L</sub>| ≥ 1 on a lossless line: the bounce sum never settles. Showing the first ' + model.Nb + ' bounces.');
+    if (model.noSteadyState) msgs.push('|Γ<sub>S</sub>Γ<sub>L</sub>| ≥ 1 on a lossless line: the response never settles.' +
+      (model.Nb == null ? ' Showing the exact response over the computed span.' : ' Showing the first ' + model.Nb + ' bounces.'));
+    if (model.resolutionWarning) msgs.push('Long line / short features: the display is near its time-resolution limit — fine detail may be smoothed.');
     else if (model.convergenceWarning) msgs.push('|Γ<sub>S</sub>Γ<sub>L</sub>| ≈ 1 — convergence is slow; the first ' + model.Nb + ' bounces are shown.');
     var el = $('warnings');
     el.innerHTML = msgs.map(function (m) { return '<div class="warn">⚠ ' + m + '</div>'; }).join('');
@@ -207,6 +265,23 @@
 
   // ---------------- drawing ----------------------------------------------
   var vPlot, iPlot, histPlot, latPlot;
+
+  function drawJunctions(plot) {
+    var ctx = plot.ctx;
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.textBaseline = 'top';
+    model.sections.forEach(function (sec, idx) {
+      if (idx > 0) plot.vline(sec.x0, { color: css('--axis'), width: 1, dash: [1, 3] });
+      var label = fmt(sec.Z0, 0) + ' Ω';
+      var lx = plot.sx((sec.x0 + sec.x1) / 2), ly = plot.margin.t + 3;
+      var tw = ctx.measureText(label).width;
+      ctx.fillStyle = css('--panel') || '#fff';
+      ctx.fillRect(lx - tw / 2 - 3, ly - 1, tw + 6, 13);
+      ctx.fillStyle = css('--muted');
+      ctx.textAlign = 'center';
+      ctx.fillText(label, lx, ly);
+    });
+  }
 
   function legend(plot, items) {
     var ctx = plot.ctx, x = plot.margin.l + plot.pw - 8, y = plot.margin.t + 6;
@@ -221,7 +296,9 @@
 
   function draw() {
     model.sample(t, xs, out);
-    var xlabel = model.harmonic ? 'position along the line   x / λ' : 'position along the line   x / L';
+    var xlabel = model.harmonic ? 'position along the line   x / λ'
+               : model.cascade ? 'position along the line   x   (v = 1 normalized units)'
+               : 'position along the line   x / L';
     var vEff = state.ax.v.auto ? vLim : state.ax.v.val;
     var iEff = state.ax.i.auto ? iLim : state.ax.i.val;
 
@@ -240,6 +317,7 @@
       vPlot.line(xs, out.vb, { color: css('--vbw'), width: 1.5, dash: [6, 3], alpha: 0.9 });
     }
     vPlot.line(xs, out.v, { color: css('--v'), width: 2.4 });
+    if (model.cascade) drawJunctions(vPlot);
     vPlot.endMarkers('◼ source (Zs)', 'load (ZL) ⬤');
     var leg = [{ label: 'V(x,t)', color: css('--v') }];
     if (state.showComponents) leg.push({ label: 'V⁺ (forward)', color: css('--vfw') }, { label: 'V⁻ (backward)', color: css('--vbw') });
@@ -249,7 +327,7 @@
     // ---- current plot
     if (state.showCurrent) {
       var iMA = new Float64Array(NX), fMA = new Float64Array(NX), bMA = new Float64Array(NX);
-      for (k = 0; k < NX; k++) { iMA[k] = out.i[k] * 1e3; fMA[k] = out.vf[k] / model.Z0 * 1e3; bMA[k] = -out.vb[k] / model.Z0 * 1e3; }
+      for (k = 0; k < NX; k++) { iMA[k] = out.i[k] * 1e3; fMA[k] = out.if[k] * 1e3; bMA[k] = out.ib[k] * 1e3; }
       iPlot.begin(0, model.L, -iEff, iEff);
       iPlot.axes(xlabel, 'I(x,t)   (mA)');
       if (state.showEnvelope && model.envI && !model.resonance) {
@@ -264,11 +342,12 @@
         iPlot.line(xs, bMA, { color: css('--vbw'), width: 1.5, dash: [6, 3], alpha: 0.9 });
       }
       iPlot.line(xs, iMA, { color: css('--i'), width: 2.4 });
-      legend(iPlot, [{ label: 'I(x,t) = (V⁺ − V⁻)/Z0', color: css('--i') }]);
+      if (model.cascade) drawJunctions(iPlot);
+      legend(iPlot, [{ label: model.cascade ? 'I(x,t) = (V⁺ − V⁻)/Z₀ₖ (per section)' : 'I(x,t) = (V⁺ − V⁻)/Z0', color: css('--i') }]);
     }
 
     // ---- hover markers on V and I plots
-    var xu = model.harmonic ? ' λ' : ' L';
+    var xu = model.harmonic ? ' λ' : model.cascade ? '' : ' L';
     if (hover.cvV) {
       var hx = vPlot.dataX(hover.cvV.x);
       if (hx != null) {
@@ -292,7 +371,16 @@
     }
 
     // ---- lattice diagram
-    if (state.showLattice) {
+    if (state.showLattice && model.cascade) {
+      latPlot.begin(0, 1, 0, 1);
+      var lc = latPlot.ctx;
+      lc.font = '12px system-ui, sans-serif';
+      lc.fillStyle = latPlot.colText;
+      lc.textAlign = 'center'; lc.textBaseline = 'middle';
+      lc.fillText('The bounce (lattice) diagram is drawn for single-section lines only —', latPlot.W / 2, latPlot.H / 2 - 10);
+      lc.fillText('with cascaded sections, waves split at every junction.', latPlot.W / 2, latPlot.H / 2 + 10);
+      $('latRTval').textContent = '';
+    } else if (state.showLattice) {
       $('latRTval').textContent = Math.min(state.latticeRT, model.Nb) + ' round trips';
       P.drawLattice(latPlot, model, t,
         { fw: css('--vfw'), bw: css('--vbw'), now: css('--now') },
@@ -308,7 +396,7 @@
       if (state.histZoom) { hMin = state.histZoom.v0; hMax = state.histZoom.v1; }
       else { var histV = state.ax.hv.auto ? vLim : state.ax.hv.val; hMin = -histV; hMax = histV; }
       histPlot.begin(hist.t0, hist.t1, hMin, hMax);
-      histPlot.axes(model.harmonic ? 'time  (periods)' : 'time  (units of T)', 'V at ends  (V)');
+      histPlot.axes(model.harmonic ? 'time  (periods)' : model.cascade ? 'time  (normalized units)' : 'time  (units of T)', 'V at ends  (V)');
       if (model.Vinf != null && isFinite(model.Vinf)) histPlot.hline(model.Vinf, { color: css('--axis'), dash: [4, 4] });
       histPlot.line(hist.ts, hist.v0, { color: css('--hsrc'), width: 1.6 });
       histPlot.line(hist.ts, hist.vL, { color: css('--hload'), width: 1.6 });
@@ -343,6 +431,7 @@
     // ---- time readout + scrub
     var tr = model.harmonic
       ? 't = ' + fmt(t, 2) + ' periods  =  ' + fmt(t / model.T, 2) + ' T'
+      : model.cascade ? 't = ' + fmt(t, 2) + '   (total transit ' + fmt(model.T, 2) + ')'
       : 't = ' + fmt(t, 2) + ' T';
     $('timeReadout').textContent = tr;
     $('mbTime').textContent = tr;
@@ -410,14 +499,21 @@
     sel.value = 'step-default';
     sel.addEventListener('change', function () {
       if (sel.value === 'custom') return;
+      if (state.sections.length > 1 &&
+          !confirm('Applying a scenario resets the line to a single section. Continue?')) {
+        sel.value = 'custom';
+        return;
+      }
       Object.assign(state, SCENARIOS[sel.value].p);
+      state.sections = [{ Z0: state.Z0, len: state.lenLambda }];
+      renderSections();
       syncInputs(); rebuild();
     });
 
     // mode radios
     document.querySelectorAll('input[name=mode]').forEach(function (r) {
       r.addEventListener('change', function () {
-        if (r.checked) { state.mode = r.value; $('scenario').value = 'custom'; syncInputs(); rebuild(); }
+        if (r.checked) { state.mode = r.value; $('scenario').value = 'custom'; syncInputs(); renderSections(); rebuild(); }
       });
     });
 
@@ -425,7 +521,7 @@
     bindNumber('inXs', 'Xs');
     bindNumber('inRL', 'RL');
     bindNumber('inXL', 'XL');
-    bindNumber('inZ0', 'Z0');
+    bindNumber('inZ0', 'Z0', function () { state.sections[0].Z0 = state.Z0; rebuild(); });
 
     $('inOpen').addEventListener('change', function () {
       state.loadOpen = $('inOpen').checked;
@@ -440,6 +536,7 @@
     function setLen(v) {
       v = Math.min(3, Math.max(0.05, v));
       state.lenLambda = v;
+      state.sections[0].len = v;
       sl.value = v; nl.value = v;
       $('scenario').value = 'custom';
       rebuild();
@@ -477,7 +574,8 @@
     });
     $('btnRestart').addEventListener('click', function () { t = 0; setPlaying(true); });
     $('btnSteady').addEventListener('click', function () {
-      t = Math.min(2 * model.Nb * model.T, 400 * model.T) + 1;
+      t = model.Nb == null ? model.tEnd + 0.01
+        : Math.min(2 * model.Nb * model.T, 400 * model.T) + 1;
       if (!model.harmonic) { t = Math.min(t, model.tEnd); setPlaying(false); } 
       draw();
     });
@@ -505,6 +603,36 @@
         draw();
       });
       document.body.classList.toggle('hide-' + pair[1], !el.checked);
+    });
+
+    // ---- cascade section editor ----
+    $('btnAddSec').addEventListener('click', function () {
+      if (state.sections.length >= 6) return;
+      var last = state.sections[state.sections.length - 1];
+      state.sections.push({ Z0: last.Z0 === 50 ? 75 : 50, len: 0.25 });
+      $('scenario').value = 'custom';
+      renderSections(); rebuild();
+    });
+
+    // ---- project save / load ----
+    $('btnSave').addEventListener('click', function () {
+      var blob = new Blob([JSON.stringify(projectData(), null, 2)], { type: 'application/json' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      var d = new Date(), pad = function (v) { return (v < 10 ? '0' : '') + v; };
+      a.download = 'tl-project-' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes()) + '.json';
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+    });
+    $('btnLoad').addEventListener('click', function () { $('fileLoad').click(); });
+    $('fileLoad').addEventListener('change', function () {
+      if ($('fileLoad').files.length) loadProjectFile($('fileLoad').files[0]);
+      $('fileLoad').value = '';
+    });
+    window.addEventListener('dragover', function (e) { e.preventDefault(); });
+    window.addEventListener('drop', function (e) {
+      e.preventDefault();
+      if (e.dataTransfer && e.dataTransfer.files.length) loadProjectFile(e.dataTransfer.files[0]);
     });
 
     // axis auto/manual controls
@@ -614,6 +742,138 @@
     syncInputs();
     rebuild();
     requestAnimationFrame(frame);
+  }
+
+  // rebuild the section-editor rows (called on structural changes, not every keystroke)
+  function renderSections() {
+    var host = $('secRows');
+    host.innerHTML = '';
+    if (state.sections.length < 2) return;
+    var unit = state.mode === 'harmonic' ? 'λ' : 'T';
+    state.sections.forEach(function (s, idx) {
+      var row = document.createElement('div');
+      row.className = 'row secrow';
+      row.innerHTML = '<span class="secno">' + (idx + 1) + '</span>' +
+        ' Z₀ <input type="number" class="sZ" step="5" min="1" value="' + s.Z0 + '"> Ω ' +
+        ' ℓ <input type="number" class="sL" step="0.05" min="0.01" max="10" value="' + s.len + '"> ' + unit +
+        ' <button class="sX" title="remove section">✕</button>';
+      row.querySelector('.sZ').addEventListener('change', function (e) {
+        var v = parseFloat(e.target.value);
+        if (!isFinite(v)) { e.target.value = s.Z0; return; }
+        v = Math.max(1, Math.min(10000, v));
+        s.Z0 = v; e.target.value = v;
+        if (idx === 0) { state.Z0 = v; $('inZ0').value = v; }
+        $('scenario').value = 'custom'; rebuild();
+      });
+      row.querySelector('.sL').addEventListener('change', function (e) {
+        var v = parseFloat(e.target.value);
+        if (!isFinite(v)) { e.target.value = s.len; return; }
+        v = Math.max(0.01, Math.min(10, v));
+        s.len = v; e.target.value = v;
+        if (idx === 0) { state.lenLambda = v; $('slLen').value = v; $('inLen').value = v; }
+        $('scenario').value = 'custom'; rebuild();
+      });
+      row.querySelector('.sX').addEventListener('click', function () {
+        state.sections.splice(idx, 1);
+        state.Z0 = state.sections[0].Z0;
+        state.lenLambda = state.sections.length > 1
+          ? state.sections[0].len
+          : Math.max(0.05, Math.min(3, state.sections[0].len));
+        if (state.sections.length === 1) state.sections[0].len = state.lenLambda;
+        $('scenario').value = 'custom';
+        renderSections(); syncInputs(); rebuild();
+      });
+      host.appendChild(row);
+    });
+  }
+
+  // ---- project save / load ----
+  var PROJECT_APP = 'eeng530-tl-visualizer';
+  function projectData() {
+    return {
+      app: PROJECT_APP, version: 1, saved: new Date().toISOString(),
+      state: JSON.parse(JSON.stringify({
+        mode: state.mode, V0: state.V0, Z0: state.Z0, Rs: state.Rs, Xs: state.Xs,
+        RL: state.RL, XL: state.XL, loadOpen: state.loadOpen,
+        lenLambda: state.lenLambda, pulseWidth: state.pulseWidth,
+        sections: state.sections, latticeRT: state.latticeRT,
+        showComponents: state.showComponents, showEnvelope: state.showEnvelope,
+        showCurrent: state.showCurrent, showLattice: state.showLattice, showHistory: state.showHistory,
+        ax: state.ax, histZoom: state.histZoom,
+      })),
+      t: t, speed: speed,
+    };
+  }
+
+  function loadProjectFile(file) {
+    var rd = new FileReader();
+    rd.onload = function () {
+      try { applyProject(JSON.parse(rd.result)); }
+      catch (err) { alert('Not a valid transmission-line project file.'); }
+    };
+    rd.onerror = function () { alert('Could not read the dropped file.'); };
+    rd.readAsText(file);
+  }
+
+  function num(v, dflt, lo, hi) {
+    v = parseFloat(v);
+    if (!isFinite(v)) return dflt;
+    return Math.max(lo, Math.min(hi, v));
+  }
+
+  function applyProject(pj) {
+    if (!pj || pj.app !== PROJECT_APP || !pj.state) throw new Error('bad project');
+    var s = pj.state;
+    state.mode = ['harmonic', 'step', 'rect', 'gauss'].indexOf(s.mode) >= 0 ? s.mode : 'step';
+    state.V0 = num(s.V0, 1, 0.1, 100);
+    state.Rs = num(s.Rs, 50, 0, 1e6); state.Xs = num(s.Xs, 0, -1e6, 1e6);
+    state.RL = num(s.RL, 50, 0, 1e6); state.XL = num(s.XL, 0, -1e6, 1e6);
+    state.loadOpen = !!s.loadOpen;
+    state.lenLambda = num(s.lenLambda, 1.5, 0.05, 3);
+    state.pulseWidth = num(s.pulseWidth, 0.25, 0.02, 2);
+    state.latticeRT = Math.round(num(s.latticeRT, 10, 1, 30));
+    state.sections = (Array.isArray(s.sections) && s.sections.length ? s.sections : [{ Z0: 50, len: 1.5 }])
+      .slice(0, 6).map(function (x) {
+        x = (x && typeof x === 'object') ? x : {};
+        return { Z0: num(x.Z0, 50, 1, 10000), len: num(x.len, 1, 0.01, 10) };
+      });
+    state.Z0 = state.sections[0].Z0;
+    state.lenLambda = state.sections.length > 1
+      ? state.sections[0].len
+      : Math.max(0.05, Math.min(3, state.sections[0].len));
+    ['showComponents', 'showEnvelope', 'showCurrent', 'showLattice', 'showHistory'].forEach(function (k) {
+      if (typeof s[k] === 'boolean') state[k] = s[k];
+    });
+    if (s.ax) Object.keys(AXIS_INPUT).forEach(function (k) {
+      if (s.ax[k]) { state.ax[k].auto = s.ax[k].auto !== false; state.ax[k].val = num(s.ax[k].val, state.ax[k].val, 1e-6, 1e9); }
+    });
+    var zm = null;
+    if (s.histZoom) {
+      var zc = { t0: +s.histZoom.t0, t1: +s.histZoom.t1, v0: +s.histZoom.v0, v1: +s.histZoom.v1 };
+      if (isFinite(zc.t0) && isFinite(zc.t1) && zc.t1 > zc.t0 && zc.t0 >= 0 &&
+          isFinite(zc.v0) && isFinite(zc.v1) && zc.v1 > zc.v0) zm = zc;
+    }
+    speed = num(pj.speed, 0.4, 0.02, 3);
+    $('slSpeed').value = Math.log10(speed);
+    $('speedReadout').textContent = fmt(speed, 2) + '×';
+    $('scenario').value = 'custom';
+    $('slLatRT').value = state.latticeRT;
+    syncToggles();
+    syncInputs();
+    renderSections();
+    rebuild();                       // clears histZoom by design — restore it after
+    if (zm) { state.histZoom = zm; syncAxisInputs(); computeHist(); }
+    t = num(pj.t, 0, 0, 1e6);
+    setPlaying(false);
+    draw();
+  }
+
+  function syncToggles() {
+    [['tgComp', 'showComponents'], ['tgEnv', 'showEnvelope'], ['tgCur', 'showCurrent'],
+     ['tgLat', 'showLattice'], ['tgHist', 'showHistory']].forEach(function (pair) {
+      $(pair[0]).checked = state[pair[1]];
+      document.body.classList.toggle('hide-' + pair[1], !state[pair[1]]);
+    });
   }
 
   function syncInputs() {

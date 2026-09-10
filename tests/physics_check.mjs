@@ -3,6 +3,7 @@
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const TL = require('../js/tline.js');
+const TLC = require('../js/cascade.js');
 
 let failures = 0;
 function check(name, got, want, tol) {
@@ -110,6 +111,47 @@ for (const c of cases) {
   check('gauss short: inverted echo', sampleOne(m, 1.5 + t0, 0.5).v, -0.5, 1e-6);
   // total V at short-circuit load is 0 at all times
   check('gauss short: V(load)=0 always', Math.abs(sampleOne(m, 1.0 + t0, 1).v), 0, 1e-9);
+}
+
+// ---------- 5. cascaded sections (frequency-domain engine) -----------------
+{
+  // degenerate cascade (two 50-ohm sections) must reproduce the single-line engine (step)
+  const mc = TLC.build({ mode: 'step', V0: 1, Zs: { re: 25, im: 0 }, ZL: { re: 100, im: 0 }, sections: [{ Z0: 50, len: 0.5 }, { Z0: 50, len: 0.5 }] });
+  const ms = TL.build({ mode: 'step', V0: 1, Z0: 50, Zs: { re: 25, im: 0 }, ZL: { re: 100, im: 0 }, lenLambda: 1 });
+  let e = 0;
+  for (let ti = 0; ti < 40; ti++) {
+    const tt = Math.min(0.27 + ti * 0.5, mc.tEnd - 0.1);
+    for (const x of [0.1, 0.5, 0.9]) e = Math.max(e, Math.abs(sampleOne(mc, tt, x).v - sampleOne(ms, tt, x).v));
+  }
+  check('cascade degenerate step = single line', e, 0, 1e-3);
+  // quarter-wave transformer: 70.71-ohm lambda/4 section matches 100 ohm to 50 ohm
+  const mq = TLC.build({ mode: 'harmonic', V0: 1, Zs: { re: 50, im: 0 }, ZL: { re: 100, im: 0 }, sections: [{ Z0: 50, len: 0.4 }, { Z0: Math.SQRT1_2 * 100, len: 0.25 }] });
+  check('cascade λ/4 transformer: Re{Zin} = 50', mq.Zin.re, 50, 1e-6);
+  check('cascade λ/4 transformer: Im{Zin} = 0', mq.Zin.im, 0, 1e-6);
+  // DC through three mixed sections
+  const md = TLC.build({ mode: 'step', V0: 1, Zs: { re: 25, im: 0 }, ZL: { re: 60, im: 0 }, sections: [{ Z0: 50, len: 0.5 }, { Z0: 75, len: 0.3 }, { Z0: 30, len: 0.2 }] });
+  const sd = sampleOne(md, md.tEnd * 0.98, 0.55);
+  check('cascade step DC voltage', sd.v, 60 / 85, 2e-3);
+  check('cascade step DC current', sd.i, 1 / 85, 2e-3 / 30);
+  // junction echo bookkeeping, rect pulse: rho = (100-50)/150 = 1/3
+  const me = TLC.build({ mode: 'rect', V0: 1, Zs: { re: 50, im: 0 }, ZL: { re: 100, im: 0 }, sections: [{ Z0: 50, len: 1 }, { Z0: 100, len: 1 }], pulseWidth: 0.25 });
+  check('cascade rect: incident', sampleOne(me, 0.6, 0.5).v, 0.5, 2e-3);
+  check('cascade rect: junction echo', sampleOne(me, 1.6, 0.5).v, 0.5 / 3, 2e-3);
+  check('cascade rect: transmitted', sampleOne(me, 1.6, 1.5).v, 2 / 3, 2e-3);
+  // strong source mismatch (Rs=1): degenerate cascade must match the exact engine,
+  // and the response must be causal (V = 0 ahead of the first wavefront)
+  const mh = TLC.build({ mode: 'step', V0: 1, Zs: { re: 1, im: 0 }, ZL: { re: 10, im: 0 }, sections: [{ Z0: 50, len: 0.5 }, { Z0: 50, len: 0.5 }] });
+  const mhs = TL.build({ mode: 'step', V0: 1, Z0: 50, Zs: { re: 1, im: 0 }, ZL: { re: 10, im: 0 }, lenLambda: 1 });
+  let eh = 0;
+  for (let ti = 0; ti < 50; ti++) {
+    const tt = Math.min(0.23 + ti * 0.4, mh.tEnd - 0.1);
+    for (const x of [0.1, 0.5, 0.9]) eh = Math.max(eh, Math.abs(sampleOne(mh, tt, x).v - sampleOne(mhs, tt, x).v));
+  }
+  check('cascade degenerate step Rs=1 = single line', eh, 0, 1e-3);
+  const mz = TLC.build({ mode: 'step', V0: 1, Zs: { re: 1, im: 0 }, ZL: { re: 10, im: 0 }, sections: [{ Z0: 50, len: 0.5 }, { Z0: 75, len: 0.3 }, { Z0: 30, len: 0.2 }] });
+  let acausal = 0;
+  for (const tt of [0.05, 0.2, 0.35, 0.6]) acausal = Math.max(acausal, Math.abs(sampleOne(mz, tt, Math.min(0.95, tt + 0.15)).v));
+  check('cascade causality: quiet ahead of the front', acausal, 0, 5e-4);
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
